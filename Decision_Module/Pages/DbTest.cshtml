@@ -1,0 +1,16 @@
+﻿@page
+@model Decision_Module.Pages.DbTestModel
+@{
+    ViewData["Title"] = "Database test";
+}
+
+<h1>Database connection test</h1>
+
+@if (Model.Error is null)
+{
+    <div class="alert alert-success">Connected. Customers in database: <strong>@Model.CustomerCount</strong></div>
+}
+else
+{
+    <div class="alert alert-danger">Could not connect: @Model.Error</div>
+}

@@ -1,0 +1,155 @@
+﻿@page
+@model Decision_Module.Pages.Underwriting.IndexModel
+@{
+    ViewData["Title"] = "Underwriting Decision";
+}
+
+<h1 class="h3 mb-3">Underwriting Decision</h1>
+
+<form method="get" class="row g-2 mb-3">
+    <div class="col-auto">
+        <label asp-for="CustomerId" class="visually-hidden">Customer ID</label>
+        <input asp-for="CustomerId" class="form-control" placeholder="Customer ID" maxlength="20" autofocus />
+    </div>
+    <div class="col-auto">
+        <button type="submit" class="btn btn-primary">Search</button>
+    </div>
+</form>
+
+@if (Model.Warning is not null)
+{
+    <div class="alert alert-warning">@Model.Warning</div>
+}
+@if (Model.Error is not null)
+{
+    <div class="alert alert-danger">@Model.Error</div>
+}
+
+@if (Model.Customer is not null)
+{
+    <div class="card mb-3">
+        <div class="card-header">Customer details</div>
+        <div class="card-body">
+            <dl class="row mb-0">
+                <dt class="col-sm-3">Customer ID</dt>
+                <dd class="col-sm-9">@Model.Customer.CustomerId</dd>
+                <dt class="col-sm-3">Name</dt>
+                <dd class="col-sm-9">@Model.Customer.CustomerName</dd>
+                <dt class="col-sm-3">Benefit group</dt>
+                <dd class="col-sm-9">@(Model.Customer.BenefitGroupId ?? "-")</dd>
+                <dt class="col-sm-3">Reinsurer</dt>
+                <dd class="col-sm-9">@(Model.Customer.ReinsurerId ?? "-")</dd>
+            </dl>
+        </div>
+    </div>
+
+    <h2 class="h5">Policies</h2>
+    @if (Model.Policies.Count == 0)
+    {
+        <div class="alert alert-secondary">No policies on record for this customer.</div>
+    }
+    else
+    {
+        <table class="table align-middle">
+            <thead>
+                <tr>
+                    <th></th>
+                    <th>Policy no.</th>
+                    <th>Product</th>
+                    <th>Benefit code</th>
+                    <th>Decision</th>
+                    <th>Source</th>
+                </tr>
+            </thead>
+            <tbody>
+                @for (var i = 0; i < Model.Policies.Count; i++)
+                {
+                    var p = Model.Policies[i];
+                    var riders = Model.RidersByPolicy[p.PolicyNumber].ToList();
+                    <tr>
+                        <td>
+                            <button class="btn btn-sm btn-outline-secondary" type="button"
+                                    data-bs-toggle="collapse" data-bs-target="#policy-@i"
+                                    aria-expanded="false" aria-controls="policy-@i">
+                                Details
+                            </button>
+                        </td>
+                        <td>@p.PolicyNumber</td>
+                        <td>@p.MarketName</td>
+                        <td>@p.BenefitCode</td>
+                        <td>@p.EffectiveDecision</td>
+                        <td><span class="badge @SourceBadge(p.Source)">@p.Source</span></td>
+                    </tr>
+                    <tr>
+                        <td colspan="6" class="p-0 border-0">
+                            <div class="collapse" id="policy-@i">
+                                <div class="p-3 bg-body-tertiary">
+                                    <h3 class="h6">Base cover</h3>
+                                    <dl class="row mb-3">
+                                        <dt class="col-sm-3">Billing frequency</dt>
+                                        <dd class="col-sm-3">@(p.BillingFrequency?.ToString() ?? "-")</dd>
+                                        <dt class="col-sm-3">Base term (bterm)</dt>
+                                        <dd class="col-sm-3">@(p.Bterm?.ToString() ?? "-")</dd>
+                                        <dt class="col-sm-3">Premium paying term (bppt)</dt>
+                                        <dd class="col-sm-3">@(p.Bppt?.ToString() ?? "-")</dd>
+                                        <dt class="col-sm-3">Instalment premium</dt>
+                                        <dd class="col-sm-3">@(p.BenefitInstalmentPremium?.ToString("N0") ?? "-")</dd>
+                                        <dt class="col-sm-3">Sum assured</dt>
+                                        <dd class="col-sm-3">@(p.BenefitSumAssured?.ToString("N0") ?? "-")</dd>
+                                    </dl>
+
+                                    <h3 class="h6">Riders</h3>
+                                    @if (riders.Count == 0)
+                                    {
+                                        <p class="text-muted mb-0">No riders on this policy.</p>
+                                    }
+                                    else
+                                    {
+                                        <table class="table table-sm mb-0">
+                                            <thead>
+                                                <tr>
+                                                    <th>Rider</th>
+                                                    <th>Type</th>
+                                                    <th>Sum assured</th>
+                                                    <th>Premium</th>
+                                                    <th>Term</th>
+                                                    <th>PPT</th>
+                                                    <th>Decision</th>
+                                                    <th>Source</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @foreach (var r in riders)
+                                                {
+                                                    <tr>
+                                                        <td>@r.RiderId</td>
+                                                        <td>@r.RiderType</td>
+                                                        <td>@(r.RiderSumAssured?.ToString("N0") ?? "-")</td>
+                                                        <td>@(r.RiderPremium?.ToString("N0") ?? "-")</td>
+                                                        <td>@(r.RiderTerm?.ToString() ?? "-")</td>
+                                                        <td>@(r.RiderPpt?.ToString() ?? "-")</td>
+                                                        <td>@r.EffectiveDecision</td>
+                                                        <td><span class="badge @SourceBadge(r.Source)">@r.Source</span></td>
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                        </table>
+                                    }
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+}
+
+@functions {
+    static string SourceBadge(string source) => source switch
+    {
+        "Override" => "bg-warning text-dark",
+        "Global" => "bg-secondary",
+        _ => "bg-light text-dark border"
+    };
+}
