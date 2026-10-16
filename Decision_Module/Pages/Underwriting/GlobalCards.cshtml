@@ -1,0 +1,80 @@
+﻿@model Decision_Module.Pages.Underwriting.IndexModel
+@{
+    var cards = new[] { ("BASE", "Base cover"), ("RIDER", "Riders") };
+}
+
+<h2 class="h5">Global decision <small class="text-muted">(this customer only)</small></h2>
+<div class="row g-3 mb-4">
+    @foreach (var (type, title) in cards)
+    {
+        var f = Model.FormForGlobal(type);
+        var affected = Model.AffectedCovers(type);
+        var kept = Model.KeptCovers(type);
+        var hasCovers = Model.CoverCount(type) > 0;
+
+        <div class="col-lg-6">
+            <div class="card h-100">
+                <div class="card-header">@title</div>
+                <div class="card-body">
+                    <p class="small text-muted mb-2">Current global decision: @Model.CurrentGlobalLabel(type)</p>
+
+                    @if (!hasCovers)
+                    {
+                        <div class="alert alert-secondary py-2">This customer has no @title.ToLower() to decide on.</div>
+                    }
+
+                    <form method="post" asp-page-handler="SaveGlobal" data-decision-form>
+                        <fieldset disabled="@(!hasCovers)">
+                            <input type="hidden" name="CustomerId" value="@Model.CustomerId" />
+                            <input type="hidden" name="Form.CoverType" value="@type" />
+
+                            <div class="row g-2">
+                                <div class="col-md-6">
+                                    <label class="form-label" for="decision-@type">Decision</label>
+                                    <select class="form-select js-decision" id="decision-@type" name="Form.DecisionId">
+                                        <option value="">Select decision...</option>
+                                        @foreach (var d in Model.Decisions)
+                                        {
+                                            <option value="@d.DecisionId" selected="@(f.DecisionId == d.DecisionId)">@d.DecisionName</option>
+                                        }
+                                    </select>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label" for="reason-@type">Reason</label>
+                                    <select class="form-select js-reason" id="reason-@type" name="Form.ReasonId">
+                                        <option value="">Select reason...</option>
+                                        @foreach (var r in Model.Reasons)
+                                        {
+                                            <option value="@r.ReasonId" data-decision="@r.DecisionId" selected="@(f.ReasonId == r.ReasonId)">@r.ReasonText</option>
+                                        }
+                                    </select>
+                                    <div class="form-text js-reason-hint"></div>
+                                </div>
+                            </div>
+
+                            @if (hasCovers)
+                            {
+                                <div class="small mt-3">
+                                    <div><strong>Will apply to (@affected.Count):</strong> @(affected.Count == 0 ? "none" : string.Join(", ", affected))</div>
+                                    @if (kept.Count > 0)
+                                    {
+                                        <div class="text-muted"><strong>Kept, own decision (@kept.Count):</strong> @string.Join(", ", kept)</div>
+                                    }
+                                    @if (affected.Count == 0)
+                                    {
+                                        <div class="text-muted">Every cover has its own decision, so there is nothing to apply.</div>
+                                    }
+                                </div>
+                            }
+
+                            <button type="submit" class="btn btn-primary btn-sm mt-3" disabled="@(affected.Count == 0)"
+                                    onclick="return confirm('Apply this decision to @affected.Count cover(s)?');">
+                                Apply global decision
+                            </button>
+                        </fieldset>
+                    </form>
+                </div>
+            </div>
+        </div>
+    }
+</div>
