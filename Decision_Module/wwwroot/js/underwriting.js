@@ -1,40 +1,30 @@
-﻿// For every decision form (global cards and cover editors):
-//  - show only the reasons that belong to the chosen decision
-//  - show the postpone period / extras only if the chosen decision uses them
-// Hidden inputs are disabled so they are not sent. The server checks everything again anyway.
-document.querySelectorAll('[data-decision-form]').forEach(function (box) {
-    var decision = box.querySelector('.js-decision');
-    var reason   = box.querySelector('.js-reason');
-    var hint     = box.querySelector('.js-reason-hint');
-    var postpone = box.querySelector('.js-postpone');
-    var extras   = box.querySelector('.js-extras');
-    if (!decision || !reason) return;
+﻿// For every decision form: show the postpone period and extras only for decisions that use them,
+// and mark the reason as required for decisions that need one. The server checks all of this again.
+document.querySelectorAll('[data-decision-form]').forEach(function (form) {
+    var decision = form.querySelector('.js-decision');
+    var reason = form.querySelector('.js-reason');
+    var star = form.querySelector('.js-reason-star');
+    var postpone = form.querySelector('.js-postpone');
+    var extras = form.querySelector('.js-extras');
+    if (!decision) return;
 
-    function show(el, visible) {
-        if (!el) return;
-        el.hidden = !visible;
-        el.querySelectorAll('input').forEach(function (i) { i.disabled = !visible; });
+    function setVisible(box, visible) {
+        if (!box) return;
+        box.hidden = !visible;
+        box.querySelectorAll('input').forEach(function (input) { input.disabled = !visible; });
     }
 
     function refresh() {
-        var chosen = decision.options[decision.selectedIndex];
-        var fields = (chosen && chosen.dataset.fields ? chosen.dataset.fields : '').split(',');
+        var option = decision.options[decision.selectedIndex];
+        var fields = option && option.dataset.fields ? option.dataset.fields.split(',') : [];
+        var reasonRequired = fields.indexOf('ReasonRequired') >= 0;
 
-        var matches = 0;
-        reason.querySelectorAll('option[data-decision]').forEach(function (o) {
-            var match = o.dataset.decision === decision.value;
-            o.hidden = !match;
-            o.disabled = !match;
-            if (match) { matches++; }
-            else if (o.selected) { reason.value = ''; }
-        });
-        reason.disabled = matches === 0;
-        hint.textContent = (decision.value && matches === 0) ? 'This decision has no reasons.' : '';
-
-        show(postpone, fields.indexOf('PostponePeriod') >= 0);
-        show(extras, fields.indexOf('Extras') >= 0);
+        if (reason) reason.required = reasonRequired;
+        if (star) star.hidden = !reasonRequired;
+        setVisible(postpone, fields.indexOf('PostponePeriod') >= 0);
+        setVisible(extras, fields.indexOf('Extras') >= 0);
     }
 
-    decision.addEventListener('change', function () { reason.value = ''; refresh(); });
+    decision.addEventListener('change', refresh);
     refresh();
 });
