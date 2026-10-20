@@ -6,14 +6,18 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 
 namespace Decision_Module.Pages.Underwriting;
 
+// A global decision row: 'BASE' or a rider type, with the label shown on the page
+public record Kind(string Code, string Label);
+
 public class IndexModel : PageModel
 {
     private readonly UnderwritingData _data;
     private readonly ILogger<IndexModel> _logger;
 
+    private List<DecisionReason> _reasons = new();
+    private List<SubReason> _subReasons = new();
     private Dictionary<string, HashSet<string>> _decisionFields = new();
     private Dictionary<string, HashSet<string>> _coverExtras = new();
-    private List<GlobalDecision> _globals = new();
 
     public IndexModel(UnderwritingData data, ILogger<IndexModel> logger)
     {
@@ -25,7 +29,10 @@ public class IndexModel : PageModel
     public string? CustomerId { get; set; }
 
     [BindProperty]
-    public DecisionInput Form { get; set; } = new();
+    public List<GlobalInput> GlobalInputs { get; set; } = new();
+
+    [BindProperty]
+    public List<CoverInput> CoverInputs { get; set; } = new();
 
     [TempData]
     public string? Success { get; set; }
@@ -33,163 +40,59 @@ public class IndexModel : PageModel
     public Customer? Customer { get; private set; }
     public List<Cover> Covers { get; private set; } = new();
     public List<Cover> Policies { get; private set; } = new();
-    public ILookup<string, Cover> RidersByPolicy { get; private set; } =
-        Enumerable.Empty<Cover>().ToLookup(c => c.PolicyNumber);
+    public List<Kind> GlobalKinds { get; private set; } = new();
     public List<DecisionOption> Decisions { get; private set; } = new();
-    public List<string> Messages { get; private set; } = new();
     public string? Warning { get; private set; }
     public string? Error { get; private set; }
-    public int? OpenUwId { get; private set; }
-    public string? OpenPolicy { get; private set; }
 
-    private bool IsPost => HttpMethods.IsPost(Request.Method);
+    public (string Name, string Label)[] ExtraFields { get; } = new[]
+    {
+        ("EMR", "EMR % (100 = standard)"),
+        ("OccupationExtra", "Occupation extra (per 1,000)"),
+        ("ResidentialExtra", "Residential extra"),
+        ("FlatExtra", "Flat extra (amount)"),
+        ("AgeExtra", "Age extra")
+    };
 
     public void OnGet()
     {
         if (!Request.Query.ContainsKey("CustomerId")) return;
-        TryLoadCustomer();
+        if (Load()) FillInputsFromDatabase();
     }
 
-    public IActionResult OnPostSaveGlobal()
+    public IActionResult OnPost()
     {
-        if (!TryLoadCustomer()) return Page();
+        if (!Load()) return Page();
 
-        var coverType = Form.CoverType ?? "";
-        if (coverType != "BASE" && coverType != "RIDER")
+        if (!InputsMatchPage())
         {
-            Error = "Unknown cover type.";
-            return Page();
-        }
-        if (CoverCount(coverType) == 0)
-        {
-            Messages.Add("This customer has no covers of this type.");
+            FillInputsFromDatabase();
+            Error = "This page is out of date. Please search for the customer again.";
             return Page();
         }
 
-        Form.ReasonText = Clean(Form.ReasonText);
+        CheckGlobals();
+        CheckCovers();
+        if (!ModelState.IsValid) return Page();
 
-        var errors = ModelErrors();
-        errors.AddRange(CheckDecision(Form));
-        if (errors.Count > 0)
-        {
-            Messages = errors;
-            return Page();
-        }
-
-        int changed;
         try
         {
-            changed = _data.SaveGlobalDecision(CustomerId!, coverType, Form.DecisionId!.Value, Form.ReasonText);
+            _data.SaveDecisions(CustomerId!, GlobalInputs, CoverInputs);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Saving global decision failed for {CustomerId}", CustomerId);
-            Error = "The decision could not be saved. Nothing was changed.";
+            _logger.LogError(ex, "Saving decisions failed for {CustomerId}", CustomerId);
+            Error = "The decisions could not be saved. Nothing was changed.";
             return Page();
         }
 
-        var decisionName = Decisions.First(d => d.DecisionId == Form.DecisionId).DecisionName;
-        var title = coverType == "BASE" ? "Base cover" : "Riders";
-        var kept = KeptCovers(coverType).Count;
-
-        Success = changed == 0
-            ? $"{title} global decision saved: {decisionName}. No cover changed, because every cover has its own decision."
-            : $"{title} global decision saved: {decisionName}. Applied to {changed} cover(s); {kept} kept (own decision).";
-
+        Success = "Decisions saved.";
         return RedirectToPage(new { CustomerId });
     }
 
-    public IActionResult OnPostSaveCover()
-    {
-        if (!TryLoadCustomer()) return Page();
+    // ---------- loading ----------
 
-        var cover = Covers.FirstOrDefault(c => c.UwId == Form.UwId);
-        if (cover is null)
-        {
-            Error = "That cover was not found for this customer.";
-            return Page();
-        }
-
-        OpenUwId = cover.UwId;
-        OpenPolicy = cover.PolicyNumber;
-
-        Form.ReasonText = Clean(Form.ReasonText);
-        Form.Notes = Clean(Form.Notes);
-        KeepOnlyApplicableFields(cover);
-
-        var errors = ModelErrors();
-        errors.AddRange(CheckDecision(Form));
-        errors.AddRange(CheckDetails(Form));
-        if (errors.Count > 0)
-        {
-            Messages = errors;
-            return Page();
-        }
-
-        int saved;
-        try
-        {
-            saved = _data.SaveCoverDecision(cover.UwId, CustomerId!, Form);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Saving cover {UwId} failed for {CustomerId}", cover.UwId, CustomerId);
-            Error = "The decision could not be saved. Nothing was changed.";
-            return Page();
-        }
-        if (saved < 1)
-        {
-            Error = "The decision could not be saved. Nothing was changed.";
-            return Page();
-        }
-
-        Success = $"Saved: {CoverLabel(cover)}.";
-        return RedirectToPage(new { CustomerId });
-    }
-
-    public IActionResult OnPostResetCover()
-    {
-        if (!TryLoadCustomer()) return Page();
-
-        var cover = Covers.FirstOrDefault(c => c.UwId == Form.UwId);
-        if (cover is null)
-        {
-            Error = "That cover was not found for this customer.";
-            return Page();
-        }
-
-        Form = new DecisionInput();
-        OpenUwId = cover.UwId;
-        OpenPolicy = cover.PolicyNumber;
-
-        if (cover.DecisionSource != "OVERRIDE")
-        {
-            Messages.Add("This cover already follows the global decision.");
-            return Page();
-        }
-
-        int reset;
-        try
-        {
-            reset = _data.ResetToGlobal(cover.UwId, CustomerId!);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Reset of cover {UwId} failed for {CustomerId}", cover.UwId, CustomerId);
-            Error = "The reset could not be saved. Nothing was changed.";
-            return Page();
-        }
-        if (reset < 1)
-        {
-            Messages.Add("There is no global decision to return to. Set the global decision for this cover type first.");
-            return Page();
-        }
-
-        Success = $"Reset: {CoverLabel(cover)} now follows the global decision.";
-        return RedirectToPage(new { CustomerId });
-    }
-
-    private bool TryLoadCustomer()
+    private bool Load()
     {
         CustomerId = CustomerId?.Trim();
 
@@ -215,9 +118,10 @@ public class IndexModel : PageModel
 
             Covers = _data.GetCovers(CustomerId);
             Policies = Covers.Where(c => c.CoverType == "BASE").ToList();
-            RidersByPolicy = Covers.Where(c => c.CoverType == "RIDER").ToLookup(c => c.PolicyNumber);
-            Decisions = _data.GetDecisionOptions();
-            _globals = _data.GetGlobalDecisions(CustomerId);
+            GlobalKinds = BuildKinds();
+            Decisions = _data.GetDecisions();
+            _reasons = _data.GetReasons();
+            _subReasons = _data.GetSubReasons();
             _decisionFields = _data.GetDecisionFields();
             _coverExtras = _data.GetCoverExtras();
             return true;
@@ -231,82 +135,231 @@ public class IndexModel : PageModel
         }
     }
 
-    private List<string> ModelErrors() =>
-        ModelState.Values.SelectMany(v => v.Errors)
-                  .Select(e => e.ErrorMessage)
-                  .Where(m => !string.IsNullOrWhiteSpace(m))
-                  .ToList();
-
-    private List<string> CheckDecision(DecisionInput input)
+    // one global decision for the base cover, and one for each rider type the customer has
+    private List<Kind> BuildKinds()
     {
-        var errors = new List<string>();
+        var kinds = new List<Kind>();
+        if (Covers.Any(c => c.CoverType == "BASE"))
+            kinds.Add(new Kind("BASE", "Base cover"));
 
-        var decision = Decisions.FirstOrDefault(d => d.DecisionId == input.DecisionId);
-        if (decision is null)
+        kinds.AddRange(Covers.Where(c => c.CoverType == "RIDER")
+                             .Select(c => new Kind(c.RiderType!, c.RiderTypeName ?? c.RiderType!))
+                             .DistinctBy(k => k.Code)
+                             .OrderBy(k => k.Label));
+        return kinds;
+    }
+
+    private void FillInputsFromDatabase()
+    {
+        var savedGlobals = _data.GetGlobalDecisions(CustomerId!);
+        var globalSubs = _data.GetGlobalSubReasons(CustomerId!);
+        var coverSubs = _data.GetCoverSubReasons(CustomerId!);
+
+        GlobalInputs = GlobalKinds.Select(kind =>
         {
-            errors.Add("Choose a decision.");
-            return errors;
+            var saved = savedGlobals.FirstOrDefault(g => g.CoverKind == kind.Code);
+            return new GlobalInput
+            {
+                Kind = kind.Code,
+                On = saved?.IsOn ?? false,
+                DecisionId = saved?.DecisionId,
+                ReasonId = saved?.ReasonId,
+                SubReasonIds = globalSubs.Where(s => s.CoverKind == kind.Code).Select(s => s.SubReasonId).ToList()
+            };
+        }).ToList();
+
+        CoverInputs = Covers.Select(cover => new CoverInput
+        {
+            UwId = cover.UwId,
+            Source = StartingSource(cover),
+            DecisionId = cover.DecisionId,
+            ReasonId = cover.ReasonId,
+            SubReasonIds = coverSubs.Where(s => s.UwId == cover.UwId).Select(s => s.SubReasonId).ToList(),
+            PostponePeriod = cover.PostponePeriod,
+            EMR = cover.EMR,
+            OccupationExtra = cover.OccupationExtra,
+            ResidentialExtra = cover.ResidentialExtra,
+            FlatExtra = cover.FlatExtra,
+            AgeExtra = cover.AgeExtra,
+            Notes = cover.Notes
+        }).ToList();
+    }
+
+    // a cover follows the global decision only if its kind has one switched on
+    private string StartingSource(Cover cover)
+    {
+        var globalIsOn = GlobalInputs.Any(g => g.Kind == KindOf(cover) && g.On);
+        return globalIsOn ? cover.DecisionSource ?? "GLOBAL" : "OVERRIDE";
+    }
+
+    // the posted lists must describe exactly the covers and global rows shown on the page
+    private bool InputsMatchPage() =>
+        GlobalInputs.Select(g => g.Kind).SequenceEqual(GlobalKinds.Select(k => k.Code)) &&
+        CoverInputs.Select(c => c.UwId).SequenceEqual(Covers.Select(c => c.UwId));
+
+    // ---------- validation ----------
+
+    private void CheckGlobals()
+    {
+        for (var i = 0; i < GlobalInputs.Count; i++)
+        {
+            var input = GlobalInputs[i];
+            var prefix = $"GlobalInputs[{i}]";
+
+            if (!input.On)
+            {
+                input.DecisionId = null;
+                input.ReasonId = null;
+                input.SubReasonIds.Clear();
+            }
+            else if (input.DecisionId is null)
+            {
+                AddError(prefix + ".DecisionId", "Choose a decision, or untick this global decision.");
+            }
+            else
+            {
+                CheckReason(prefix, input.Kind, input);
+            }
+        }
+    }
+
+    private void CheckCovers()
+    {
+        for (var i = 0; i < CoverInputs.Count; i++)
+        {
+            var input = CoverInputs[i];
+            var cover = Covers[i];
+            var prefix = $"CoverInputs[{i}]";
+            var kind = KindOf(cover);
+            var globalInput = GlobalInputs.First(g => g.Kind == kind);
+
+            if (input.Source == "GLOBAL")
+            {
+                if (!globalInput.On)
+                {
+                    AddError(prefix + ".Source", "The global decision is switched off. Choose Override.");
+                }
+                else
+                {
+                    input.DecisionId = globalInput.DecisionId;
+                    input.ReasonId = globalInput.ReasonId;
+                    input.SubReasonIds = globalInput.SubReasonIds.ToList();
+                }
+            }
+            else if (input.Source == "OVERRIDE")
+            {
+                if (input.DecisionId is null)
+                {
+                    input.ReasonId = null;
+                    input.SubReasonIds.Clear();
+                }
+                else
+                {
+                    CheckReason(prefix, kind, input);
+                }
+            }
+            else
+            {
+                AddError(prefix + ".Source", "Choose Global or Override.");
+            }
+
+            KeepApplicableDetails(cover, input);
+            CheckDetails(prefix, input);
+        }
+    }
+
+    // A reason is needed when the catalogue has reasons for this decision and cover kind.
+    // If the reason has sub-reasons, at least one must be chosen.
+    private void CheckReason(string prefix, string kind, DecisionInput input)
+    {
+        if (!Decisions.Any(d => d.DecisionId == input.DecisionId))
+        {
+            AddError(prefix + ".DecisionId", "Choose a valid decision.");
+            return;
         }
 
-        if (input.ReasonText is null && Shows(decision.DecisionId, "ReasonRequired"))
-            errors.Add($"Enter a reason for {decision.DecisionName}.");
+        var reasons = ReasonsFor(kind).Where(r => r.DecisionId == input.DecisionId).ToList();
+        if (reasons.Count == 0)
+        {
+            input.ReasonId = null;
+            input.SubReasonIds.Clear();
+            return;
+        }
+        if (input.ReasonId is null || !reasons.Any(r => r.ReasonId == input.ReasonId))
+        {
+            AddError(prefix + ".ReasonId", "Choose a reason.");
+            return;
+        }
 
-        if (input.ReasonText is { Length: > 500 })
-            errors.Add("The reason can be at most 500 characters.");
+        var subReasons = _subReasons.Where(s => s.ReasonId == input.ReasonId).ToList();
+        input.SubReasonIds = input.SubReasonIds.Distinct().ToList();
 
-        return errors;
+        if (subReasons.Count == 0)
+            input.SubReasonIds.Clear();
+        else if (input.SubReasonIds.Count == 0)
+            AddError(prefix + ".SubReasonIds", "Select at least one sub-reason.");
+        else if (input.SubReasonIds.Any(id => subReasons.All(s => s.SubReasonId != id)))
+            AddError(prefix + ".SubReasonIds", "A selected sub-reason does not belong to this reason.");
     }
 
-    // demo rules until the mentor confirms ranges and units: numbers cannot be negative
-    private static List<string> CheckDetails(DecisionInput input)
+    // postpone period and extras are kept only where the decision and the cover use them
+    private void KeepApplicableDetails(Cover cover, CoverInput input)
     {
-        var errors = new List<string>();
+        var fields = FieldsFor(input.DecisionId);
+        if (!fields.Contains("PostponePeriod")) input.PostponePeriod = null;
 
+        var extras = fields.Contains("Extras") ? AllowedExtras(cover) : new HashSet<string>();
+        if (!extras.Contains("EMR")) input.EMR = null;
+        if (!extras.Contains("OccupationExtra")) input.OccupationExtra = null;
+        if (!extras.Contains("ResidentialExtra")) input.ResidentialExtra = null;
+        if (!extras.Contains("FlatExtra")) input.FlatExtra = null;
+        if (!extras.Contains("AgeExtra")) input.AgeExtra = null;
+
+        input.Notes = string.IsNullOrWhiteSpace(input.Notes) ? null : input.Notes.Trim();
+    }
+
+    // demo rules until the mentor confirms ranges: no negative numbers, and 100 is the lowest EMR
+    private void CheckDetails(string prefix, CoverInput input)
+    {
         if (input.PostponePeriod is < 0 or > 999)
-            errors.Add("Postpone period must be between 0 and 999.");
+            AddError(prefix + ".PostponePeriod", "Postpone period must be between 0 and 999.");
 
-        CheckAmount(errors, "EMR", input.EMR);
-        CheckAmount(errors, "Occupation extra", input.OccupationExtra);
-        CheckAmount(errors, "Residential extra", input.ResidentialExtra);
-        CheckAmount(errors, "Flat extra", input.FlatExtra);
-        CheckAmount(errors, "Age extra", input.AgeExtra);
+        CheckAmount(prefix + ".EMR", "EMR", input.EMR, 100);
+        CheckAmount(prefix + ".OccupationExtra", "Occupation extra", input.OccupationExtra);
+        CheckAmount(prefix + ".ResidentialExtra", "Residential extra", input.ResidentialExtra);
+        CheckAmount(prefix + ".FlatExtra", "Flat extra", input.FlatExtra);
+        CheckAmount(prefix + ".AgeExtra", "Age extra", input.AgeExtra);
 
         if (input.Notes is { Length: > 500 })
-            errors.Add("Notes can be at most 500 characters.");
-
-        return errors;
+            AddError(prefix + ".Notes", "Notes can be at most 500 characters.");
     }
 
-    private static void CheckAmount(List<string> errors, string label, decimal? value)
+    private void CheckAmount(string key, string label, decimal? value, decimal minimum = 0)
     {
         if (value is null) return;
 
-        if (value < 0) errors.Add($"{label} cannot be negative.");
-        else if (value > 9999999.99m) errors.Add($"{label} is too large.");
-        else if (decimal.Round(value.Value, 2) != value) errors.Add($"{label} can have at most 2 decimal places.");
+        if (value < minimum) AddError(key, $"{label} cannot be below {minimum}.");
+        else if (value > 9999999.99m) AddError(key, $"{label} is too large.");
+        else if (decimal.Round(value.Value, 2) != value) AddError(key, $"{label} can have at most 2 decimal places.");
     }
 
-    // anything that does not apply to the chosen decision and this cover is dropped, even if the form was edited
-    private void KeepOnlyApplicableFields(Cover cover)
+    private void AddError(string key, string message) => ModelState.AddModelError(key, message);
+
+    // ---------- used by the page ----------
+
+    public string KindOf(Cover cover) => cover.CoverType == "BASE" ? "BASE" : cover.RiderType ?? "";
+
+    public List<Cover> CoversOf(Cover policy) =>
+        Covers.Where(c => c.PolicyNumber == policy.PolicyNumber).ToList();
+
+    public IEnumerable<DecisionReason> ReasonsFor(string kind) =>
+        _reasons.Where(r => r.Kinds.Contains("," + kind + ","));
+
+    public IEnumerable<SubReason> SubReasonsFor(string kind)
     {
-        var fields = FieldsFor(Form.DecisionId);
-        if (!fields.Contains("PostponePeriod")) Form.PostponePeriod = null;
-
-        var extras = fields.Contains("Extras") ? AllowedExtras(cover) : new HashSet<string>();
-        if (!extras.Contains("EMR")) Form.EMR = null;
-        if (!extras.Contains("OccupationExtra")) Form.OccupationExtra = null;
-        if (!extras.Contains("ResidentialExtra")) Form.ResidentialExtra = null;
-        if (!extras.Contains("FlatExtra")) Form.FlatExtra = null;
-        if (!extras.Contains("AgeExtra")) Form.AgeExtra = null;
+        var reasonIds = ReasonsFor(kind).Select(r => r.ReasonId).ToHashSet();
+        return _subReasons.Where(s => reasonIds.Contains(s.ReasonId));
     }
-
-    private static string? Clean(string? text) =>
-        string.IsNullOrWhiteSpace(text) ? null : text.Trim();
-
-    private static string CoverLabel(Cover cover) =>
-        cover.CoverType == "BASE" ? $"base cover of policy {cover.PolicyNumber}" : $"rider {cover.RiderId}";
-
-    // ---- used by the page ----
 
     private HashSet<string> FieldsFor(int? decisionId) =>
         decisionId is not null && _decisionFields.TryGetValue(decisionId.Value.ToString(), out var fields)
@@ -317,72 +370,17 @@ public class IndexModel : PageModel
 
     public string FieldsCsv(int decisionId) => string.Join(",", FieldsFor(decisionId));
 
-    public HashSet<string> AllowedExtras(Cover cover)
+    public HashSet<string> AllowedExtras(Cover cover) =>
+        _coverExtras.TryGetValue(KindOf(cover), out var extras) ? extras : new HashSet<string>();
+
+    public decimal? GetExtra(CoverInput input, string name) => name switch
     {
-        var kind = cover.CoverType == "BASE" ? "BASE" : cover.RiderType ?? "";
-        return _coverExtras.TryGetValue(kind, out var extras) ? extras : new HashSet<string>();
-    }
-
-    public int CoverCount(string coverType) => Covers.Count(c => c.CoverType == coverType);
-
-    // covers that follow the global decision
-    public List<string> AffectedCovers(string coverType) =>
-        Covers.Where(c => c.CoverType == coverType && c.DecisionSource != "OVERRIDE")
-              .Select(c => c.RiderId ?? c.PolicyNumber).ToList();
-
-    // covers with their own decision, which a global decision leaves alone
-    public List<string> KeptCovers(string coverType) =>
-        Covers.Where(c => c.CoverType == coverType && c.DecisionSource == "OVERRIDE")
-              .Select(c => c.RiderId ?? c.PolicyNumber).ToList();
-
-    public string CurrentGlobalLabel(string coverType)
-    {
-        var global = _globals.FirstOrDefault(g => g.CoverType == coverType);
-        if (global is null) return "not set";
-        return string.IsNullOrWhiteSpace(global.ReasonText)
-            ? global.DecisionName
-            : $"{global.DecisionName} ({global.ReasonText})";
-    }
-
-    // the global card shows the saved global decision, or what was typed if that save failed
-    public DecisionInput FormForGlobal(string coverType)
-    {
-        if (IsPost && Form.UwId is null && Form.CoverType == coverType) return Form;
-
-        var global = _globals.FirstOrDefault(g => g.CoverType == coverType);
-        return new DecisionInput
-        {
-            CoverType = coverType,
-            DecisionId = global?.DecisionId,
-            ReasonText = global?.ReasonText
-        };
-    }
-
-    // a cover's editor shows the saved values, or what was typed if that save failed
-    public DecisionInput FormForCover(Cover cover)
-    {
-        if (IsPost && Form.UwId == cover.UwId) return Form;
-
-        return new DecisionInput
-        {
-            UwId = cover.UwId,
-            DecisionId = cover.DecisionId,
-            ReasonText = cover.ReasonText,
-            PostponePeriod = cover.PostponePeriod,
-            EMR = cover.EMR,
-            OccupationExtra = cover.OccupationExtra,
-            ResidentialExtra = cover.ResidentialExtra,
-            FlatExtra = cover.FlatExtra,
-            AgeExtra = cover.AgeExtra,
-            Notes = cover.Notes
-        };
-    }
-
-    public string SourceBadge(string? source) => source switch
-    {
-        "OVERRIDE" => "bg-warning text-dark",
-        "GLOBAL" => "bg-secondary",
-        _ => "bg-light text-dark border"
+        "EMR" => input.EMR,
+        "OccupationExtra" => input.OccupationExtra,
+        "ResidentialExtra" => input.ResidentialExtra,
+        "FlatExtra" => input.FlatExtra,
+        "AgeExtra" => input.AgeExtra,
+        _ => null
     };
 
     public string? Dec(decimal? value) => value?.ToString("0.##", CultureInfo.InvariantCulture);

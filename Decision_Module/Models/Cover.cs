@@ -1,29 +1,31 @@
-﻿using System.Globalization;
+﻿namespace Decision_Module.Models;
 
-namespace Decision_Module.Models;
-
+// One row of UWDecision: a policy's base cover or one of its riders, with its saved decision
 public class Cover
 {
     public int UwId { get; set; }
-    public string CustomerId { get; set; } = "";
     public string CoverType { get; set; } = "";
     public string PolicyNumber { get; set; } = "";
     public string? RiderId { get; set; }
     public string? RiderType { get; set; }
+    public string? RiderTypeName { get; set; }
 
     public string MarketName { get; set; } = "";
-    public int? BillingFrequency { get; set; }
-    public string BenefitCode { get; set; } = "";
     public string? BenefitGroup { get; set; }
+    public string BenefitCode { get; set; } = "";
     public int? Bterm { get; set; }
     public int? Bppt { get; set; }
     public decimal? BenefitInstalmentPremium { get; set; }
     public decimal? BenefitSumAssured { get; set; }
+    public string? PaymentFrequency { get; set; }
+    public string? FrequencyLabel { get; set; }
+    public string? ReinsurerId { get; set; }
+    public string? BaseCoverId { get; set; }
+    public string? BaseCoverType { get; set; }
 
-    public int? DecisionId { get; set; }
-    public string? DecisionName { get; set; }
-    public string? ReasonText { get; set; }
     public string? DecisionSource { get; set; }
+    public int? DecisionId { get; set; }
+    public int? ReasonId { get; set; }
     public int? PostponePeriod { get; set; }
     public decimal? EMR { get; set; }
     public decimal? OccupationExtra { get; set; }
@@ -31,23 +33,4 @@ public class Cover
     public decimal? FlatExtra { get; set; }
     public decimal? AgeExtra { get; set; }
     public string? Notes { get; set; }
-
-    public string SourceLabel => DecisionSource switch
-    {
-        "GLOBAL" => "Global",
-        "OVERRIDE" => "Override",
-        _ => ""
-    };
-
-    public IEnumerable<string> Details()
-    {
-        if (PostponePeriod is not null) yield return $"Postpone period {PostponePeriod}";
-        if (EMR is not null) yield return $"EMR {Format(EMR.Value)}";
-        if (OccupationExtra is not null) yield return $"Occupation extra {Format(OccupationExtra.Value)}";
-        if (ResidentialExtra is not null) yield return $"Residential extra {Format(ResidentialExtra.Value)}";
-        if (FlatExtra is not null) yield return $"Flat extra {Format(FlatExtra.Value)}";
-        if (AgeExtra is not null) yield return $"Age extra {Format(AgeExtra.Value)}";
-    }
-
-    private static string Format(decimal value) => value.ToString("0.##", CultureInfo.InvariantCulture);
 }

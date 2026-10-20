@@ -2,10 +2,21 @@
 
 public class DecisionInput
 {
-    public int? UwId { get; set; }
-    public string? CoverType { get; set; }
     public int? DecisionId { get; set; }
-    public string? ReasonText { get; set; }
+    public int? ReasonId { get; set; }
+    public List<int> SubReasonIds { get; set; } = new();
+}
+
+public class GlobalInput : DecisionInput
+{
+    public string Kind { get; set; } = "";
+    public bool On { get; set; }
+}
+
+public class CoverInput : DecisionInput
+{
+    public int UwId { get; set; }
+    public string Source { get; set; } = "OVERRIDE";
     public int? PostponePeriod { get; set; }
     public decimal? EMR { get; set; }
     public decimal? OccupationExtra { get; set; }
