@@ -64,15 +64,21 @@ public class UnderwritingData
             new { CustomerId = AnsiText(customerId, 20) }).ToList();
     }
 
-    public List<GlobalDecision> GetGlobalDecisions(string customerId)
-    {
-        using var conn = new SqlConnection(_connectionString);
-        return conn.Query<GlobalDecision>(
-            "SELECT GlobalId, CoverKind, IsOn, DecisionId, ReasonId FROM UWGlobalDecision WHERE CustomerId = @CustomerId",
-            new { CustomerId = AnsiText(customerId, 20) }).ToList();
-    }
 
-    public List<GlobalSubReason> GetGlobalSubReasons(string customerId)
+	public List<GlobalDecision> GetGlobalDecisions(string customerId)
+	{
+		using var conn = new SqlConnection(_connectionString);
+
+		return conn.Query<GlobalDecision>("""
+        SELECT GlobalId, CoverKind, IsOn, DecisionId, ReasonId, Notes
+        FROM dbo.UWGlobalDecision
+        WHERE CustomerId = @CustomerId
+        """,
+			new { CustomerId = AnsiText(customerId, 20) }).ToList();
+	}
+
+
+	public List<GlobalSubReason> GetGlobalSubReasons(string customerId)
     {
         using var conn = new SqlConnection(_connectionString);
         return conn.Query<GlobalSubReason>("""
@@ -142,64 +148,167 @@ public class UnderwritingData
         transaction.Commit();
     }
 
-    private void SaveGlobal(SqlConnection conn, SqlTransaction transaction, string customerId, GlobalInput input)
-    {
-        var values = new
-        {
-            CustomerId = AnsiText(customerId, 20),
-            Kind = AnsiText(input.Kind, 50),
-            IsOn = input.On,
-            input.DecisionId,
-            input.ReasonId
-        };
 
-        conn.Execute("""
-            UPDATE UWGlobalDecision
-               SET IsOn = @IsOn, DecisionId = @DecisionId, ReasonId = @ReasonId
-             WHERE CustomerId = @CustomerId AND CoverKind = @Kind;
+	private void SaveGlobal(
+		SqlConnection conn,
+		SqlTransaction transaction,
+		string customerId,
+		GlobalInput input)
+	{
+		var values = new
+		{
+			CustomerId = AnsiText(customerId, 20),
+			Kind = AnsiText(input.Kind, 50),
+			IsOn = input.On,
+			input.DecisionId,
+			input.ReasonId,
+			input.Notes
+		};
 
-            IF @@ROWCOUNT = 0
-                INSERT INTO UWGlobalDecision (CustomerId, CoverKind, IsOn, DecisionId, ReasonId)
-                VALUES (@CustomerId, @Kind, @IsOn, @DecisionId, @ReasonId);
-            """, values, transaction);
+		conn.Execute("""
+        UPDATE dbo.UWGlobalDecision
+        SET IsOn = @IsOn,
+            DecisionId = @DecisionId,
+            ReasonId = @ReasonId,
+            Notes = @Notes
+        WHERE CustomerId = @CustomerId
+          AND CoverKind = @Kind;
 
-        var globalId = conn.ExecuteScalar<int>(
-            "SELECT GlobalId FROM UWGlobalDecision WHERE CustomerId = @CustomerId AND CoverKind = @Kind",
-            values, transaction);
+        IF @@ROWCOUNT = 0
+            INSERT INTO dbo.UWGlobalDecision
+                (CustomerId, CoverKind, IsOn, DecisionId, ReasonId, Notes)
+            VALUES
+                (@CustomerId, @Kind, @IsOn, @DecisionId, @ReasonId, @Notes);
+        """, values, transaction);
 
-        conn.Execute("DELETE FROM UWGlobalSubReason WHERE GlobalId = @GlobalId", new { GlobalId = globalId }, transaction);
-        conn.Execute("INSERT INTO UWGlobalSubReason (GlobalId, SubReasonId) VALUES (@GlobalId, @SubReasonId)",
-            input.SubReasonIds.Select(id => new { GlobalId = globalId, SubReasonId = id }), transaction);
-    }
+		var globalId = conn.ExecuteScalar<int>("""
+        SELECT GlobalId
+        FROM dbo.UWGlobalDecision
+        WHERE CustomerId = @CustomerId AND CoverKind = @Kind
+        """, values, transaction);
 
-    private void SaveCover(SqlConnection conn, SqlTransaction transaction, string customerId, CoverInput input)
-    {
-        conn.Execute("""
-            UPDATE UWDecision
-               SET DecisionSource = @Source, DecisionId = @DecisionId, ReasonId = @ReasonId,
-                   PostponePeriod = @PostponePeriod, EMR = @EMR, OccupationExtra = @OccupationExtra,
-                   ResidentialExtra = @ResidentialExtra, FlatExtra = @FlatExtra, AgeExtra = @AgeExtra,
-                   Notes = @Notes
-             WHERE UwId = @UwId AND CustomerId = @CustomerId
-            """,
-            new
-            {
-                input.UwId,
-                CustomerId = AnsiText(customerId, 20),
-                Source = AnsiText(input.Source, 8),
-                input.DecisionId,
-                input.ReasonId,
-                input.PostponePeriod,
-                input.EMR,
-                input.OccupationExtra,
-                input.ResidentialExtra,
-                input.FlatExtra,
-                input.AgeExtra,
-                input.Notes
-            }, transaction);
+		conn.Execute(
+			"DELETE FROM dbo.UWGlobalReason WHERE GlobalId = @GlobalId",
+			new { GlobalId = globalId }, transaction);
 
-        conn.Execute("DELETE FROM UWDecisionSubReason WHERE UwId = @UwId", new { input.UwId }, transaction);
-        conn.Execute("INSERT INTO UWDecisionSubReason (UwId, SubReasonId) VALUES (@UwId, @SubReasonId)",
-            input.SubReasonIds.Select(id => new { input.UwId, SubReasonId = id }), transaction);
-    }
+		conn.Execute("""
+        INSERT INTO dbo.UWGlobalReason (GlobalId, ReasonId)
+        VALUES (@GlobalId, @ReasonId)
+        """,
+			input.Reasons.Select(r => new
+			{
+				GlobalId = globalId,
+				r.ReasonId
+			}), transaction);
+
+		conn.Execute(
+			"DELETE FROM dbo.UWGlobalSubReason WHERE GlobalId = @GlobalId",
+			new { GlobalId = globalId }, transaction);
+
+		conn.Execute("""
+        INSERT INTO dbo.UWGlobalSubReason (GlobalId, SubReasonId)
+        VALUES (@GlobalId, @SubReasonId)
+        """,
+			input.Reasons.SelectMany(r => r.SubReasonIds.Select(id => new
+			{
+				GlobalId = globalId,
+				SubReasonId = id
+			})), transaction);
+	}
+
+
+
+	private void SaveCover(
+		SqlConnection conn,
+		SqlTransaction transaction,
+		string customerId,
+		CoverInput input)
+	{
+		conn.Execute("""
+        UPDATE dbo.UWDecision
+        SET DecisionSource = @Source,
+            DecisionId = @DecisionId,
+            ReasonId = @ReasonId,
+            PostponePeriod = @PostponePeriod,
+            EMR = @EMR,
+            OccupationExtra = @OccupationExtra,
+            ResidentialExtra = @ResidentialExtra,
+            FlatExtra = @FlatExtra,
+            AgeExtra = @AgeExtra,
+            Notes = @Notes
+        WHERE UwId = @UwId AND CustomerId = @CustomerId
+        """,
+			new
+			{
+				input.UwId,
+				CustomerId = AnsiText(customerId, 20),
+				Source = AnsiText(input.Source, 8),
+				input.DecisionId,
+				input.ReasonId,
+				input.PostponePeriod,
+				input.EMR,
+				input.OccupationExtra,
+				input.ResidentialExtra,
+				input.FlatExtra,
+				input.AgeExtra,
+				input.Notes
+			}, transaction);
+
+		conn.Execute(
+			"DELETE FROM dbo.UWDecisionReason WHERE UwId = @UwId",
+			new { input.UwId }, transaction);
+
+		conn.Execute("""
+        INSERT INTO dbo.UWDecisionReason (UwId, ReasonId)
+        VALUES (@UwId, @ReasonId)
+        """,
+			input.Reasons.Select(r => new
+			{
+				input.UwId,
+				r.ReasonId
+			}), transaction);
+
+		conn.Execute(
+			"DELETE FROM dbo.UWDecisionSubReason WHERE UwId = @UwId",
+			new { input.UwId }, transaction);
+
+		conn.Execute("""
+        INSERT INTO dbo.UWDecisionSubReason (UwId, SubReasonId)
+        VALUES (@UwId, @SubReasonId)
+        """,
+			input.Reasons.SelectMany(r => r.SubReasonIds.Select(id => new
+			{
+				input.UwId,
+				SubReasonId = id
+			})), transaction);
+	}
+
+
+
+	public List<DecisionReasonSelection> GetCoverReasons(string customerId)
+	{
+		using var conn = new SqlConnection(_connectionString);
+
+		return conn.Query<DecisionReasonSelection>("""
+        SELECT r.UwId, r.ReasonId
+        FROM dbo.UWDecisionReason r
+        INNER JOIN dbo.UWDecision u ON u.UwId = r.UwId
+        WHERE u.CustomerId = @CustomerId
+        """,
+			new { CustomerId = AnsiText(customerId, 20) }).ToList();
+	}
+
+	public List<GlobalReasonSelection> GetGlobalReasons(string customerId)
+	{
+		using var conn = new SqlConnection(_connectionString);
+
+		return conn.Query<GlobalReasonSelection>("""
+        SELECT r.GlobalId, r.ReasonId
+        FROM dbo.UWGlobalReason r
+        INNER JOIN dbo.UWGlobalDecision g ON g.GlobalId = r.GlobalId
+        WHERE g.CustomerId = @CustomerId
+        """,
+			new { CustomerId = AnsiText(customerId, 20) }).ToList();
+	}
+
 }

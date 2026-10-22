@@ -85,47 +85,99 @@
                                 <div class="col-md-2">
                                     <input type="hidden" name="@(prefix).Kind" value="@kind.Code" />
                                     <div class="form-check">
-                                        <input class="form-check-input rounded-circle js-on" type="checkbox" id="on-@g"
-                                               name="@(prefix).On" value="true" checked="@globalInput.On" />
-                                        <label class="form-check-label fw-semibold" for="on-@g">@kind.Label</label>
+                                        <input class="form-check-input rounded-circle js-on"
+                                               type="checkbox"
+                                               id="on-@g"
+                                               name="@(prefix).On"
+                                               value="true"
+                                               checked="@globalInput.On" />
+                                        <label class="form-check-label fw-semibold" for="on-@g">
+                                            @kind.Label
+                                        </label>
                                     </div>
                                 </div>
+
                                 <div class="col-md-3">
                                     <label class="form-label small mb-1" for="decision-g@(g)">Decision</label>
-                                    <select class="form-select form-select-sm js-decision" id="decision-g@(g)" name="@(prefix).DecisionId">
+                                    <select class="form-select form-select-sm js-decision"
+                                            id="decision-g@(g)"
+                                            name="@(prefix).DecisionId">
                                         <option value="">Select decision...</option>
                                         @foreach (var decision in Model.Decisions)
                                         {
-                                            <option value="@decision.DecisionId" data-fields="@Model.FieldsCsv(decision.DecisionId)"
-                                                    selected="@(globalInput.DecisionId == decision.DecisionId)">@decision.DecisionName</option>
+                                            <option value="@decision.DecisionId"
+                                                    data-fields="@Model.FieldsCsv(decision.DecisionId)"
+                                                    selected="@(globalInput.DecisionId == decision.DecisionId)">
+                                                @decision.DecisionName
+                                            </option>
                                         }
                                     </select>
                                     @Html.ValidationMessage(prefix + ".DecisionId", new { @class = "text-danger small" })
                                 </div>
-                                <div class="col-md-3">
-                                    <label class="form-label small mb-1" for="reason-g@(g)">Reason <span class="text-danger js-reason-required" hidden>*</span></label>
-                                    <select class="form-select form-select-sm js-reason" id="reason-g@(g)" name="@(prefix).ReasonId">
-                                        <option value="">Select reason...</option>
+
+                                <div class="col-md-7">
+                                    <div class="form-label small mb-1">
+                                        Reasons and their sub-reasons
+                                        <span class="text-danger js-reason-required" hidden>*</span>
+                                    </div>
+
+                                    <div class="js-reasons">
                                         @foreach (var reason in Model.ReasonsFor(kind.Code))
                                         {
-                                            <option value="@reason.ReasonId" data-decision="@reason.DecisionId"
-                                                    selected="@(globalInput.ReasonId == reason.ReasonId)">@reason.ReasonText</option>
+                                            var selectedReason = globalInput.Reasons.FirstOrDefault(r => r.ReasonId == reason.ReasonId);
+                                            var reasonName = $"{prefix}.Reasons[{reason.ReasonId}]";
+
+                                            <input type="hidden"
+                                                   name="@(prefix).Reasons.Index"
+                                                   value="@reason.ReasonId" />
+
+                                            <div class="border rounded p-2 mb-2 js-reason-group"
+                                                 data-reason="@reason.ReasonId"
+                                                 data-decision="@reason.DecisionId">
+                                                <div class="form-check">
+                                                    <input class="form-check-input js-reason-check"
+                                                           type="checkbox"
+                                                           id="reason-g@(g)-@reason.ReasonId"
+                                                           name="@(reasonName).ReasonId"
+                                                           value="@reason.ReasonId"
+                                                           checked="@(selectedReason is not null)" />
+                                                    <label class="form-check-label"
+                                                           for="reason-g@(g)-@reason.ReasonId">
+                                                        @reason.ReasonText
+                                                    </label>
+                                                </div>
+
+                                                @foreach (var sub in Model.SubReasonsFor(kind.Code).Where(s => s.ReasonId == reason.ReasonId))
+                                                {
+                                                    <div class="form-check ms-4 js-sub-item">
+                                                        <input class="form-check-input js-sub"
+                                                               type="checkbox"
+                                                               id="sub-g@(g)-@sub.SubReasonId"
+                                                               name="@(reasonName).SubReasonIds"
+                                                               value="@sub.SubReasonId"
+                                                               checked="@(selectedReason?.SubReasonIds.Contains(sub.SubReasonId) ?? false)" />
+                                                        <label class="form-check-label small"
+                                                               for="sub-g@(g)-@sub.SubReasonId">
+                                                            @sub.SubReasonText
+                                                        </label>
+                                                    </div>
+                                                }
+                                            </div>
                                         }
-                                    </select>
-                                    @Html.ValidationMessage(prefix + ".ReasonId", new { @class = "text-danger small" })
+                                    </div>
+
+                                    @Html.ValidationMessage(prefix + ".Reasons", new { @class = "text-danger small" })
                                 </div>
-                                <div class="col-md-4">
-                                    <div class="form-label small mb-1">Sub-reasons <span class="text-danger js-sub-required" hidden>*</span></div>
-                                    @foreach (var sub in Model.SubReasonsFor(kind.Code))
-                                    {
-                                        <div class="form-check js-sub-item" data-reason="@sub.ReasonId">
-                                            <input class="form-check-input js-sub" type="checkbox" id="sub-g@(g)-@sub.SubReasonId"
-                                                   name="@(prefix).SubReasonIds" value="@sub.SubReasonId"
-                                                   checked="@globalInput.SubReasonIds.Contains(sub.SubReasonId)" />
-                                            <label class="form-check-label small" for="sub-g@(g)-@sub.SubReasonId">@sub.SubReasonText</label>
-                                        </div>
-                                    }
-                                    @Html.ValidationMessage(prefix + ".SubReasonIds", new { @class = "text-danger small" })
+
+                                <div class="col-md-3">
+                                    <label class="form-label small mb-1" for="notes-g@(g)">Global note</label>
+                                    <input type="text"
+                                           maxlength="500"
+                                           class="form-control form-control-sm js-global-notes"
+                                           id="notes-g@(g)"
+                                           name="@(prefix).Notes"
+                                           value="@globalInput.Notes" />
+                                    @Html.ValidationMessage(prefix + ".Notes", new { @class = "text-danger small" })
                                 </div>
                             </div>
                         </li>
@@ -134,6 +186,7 @@
             </div>
 
             <h2 class="h5">Policies</h2>
+
             @foreach (var policy in Model.Policies)
             {
                 var covers = Model.CoversOf(policy);
@@ -148,7 +201,10 @@
                             </div>
                             <div class="col-6 col-lg-4">
                                 <div class="small text-muted">Product</div>
-                                <div>@policy.MarketName <span class="text-muted small">@policy.BenefitGroup</span></div>
+                                <div>
+                                    @policy.MarketName
+                                    <span class="text-muted small">@policy.BenefitGroup</span>
+                                </div>
                             </div>
                             <div class="col-6 col-lg-2">
                                 <div class="small text-muted">Benefit code</div>
@@ -179,14 +235,24 @@
                                 <input type="hidden" name="@(prefix).UwId" value="@cover.UwId" />
 
                                 <div class="d-flex flex-wrap align-items-baseline column-gap-4 row-gap-1 mb-3 small">
-                                    <span class="fs-6 fw-semibold">@(isBase ? "Base cover" : cover.RiderTypeName)</span>
+                                    <span class="fs-6 fw-semibold">
+                                        @(isBase ? "Base cover" : cover.RiderTypeName)
+                                    </span>
                                     <span class="text-muted">@(isBase ? cover.BaseCoverId : cover.RiderId)</span>
+
                                     @if (isBase && cover.BaseCoverType is not null)
                                     {
                                         <span class="badge text-bg-light border">@cover.BaseCoverType</span>
                                     }
-                                    <span>Sum assured: <strong>@(cover.BenefitSumAssured?.ToString("N0") ?? "-")</strong></span>
-                                    <span>Premium: <strong>@(cover.BenefitInstalmentPremium?.ToString("N0") ?? "-")</strong></span>
+
+                                    <span>
+                                        Sum assured:
+                                        <strong>@(cover.BenefitSumAssured?.ToString("N0") ?? "-")</strong>
+                                    </span>
+                                    <span>
+                                        Premium:
+                                        <strong>@(cover.BenefitInstalmentPremium?.ToString("N0") ?? "-")</strong>
+                                    </span>
                                     <span>Frequency: <strong>@frequency</strong></span>
                                     <span>Term (bterm): <strong>@(cover.Bterm?.ToString() ?? "-")</strong></span>
                                     <span>Premium paying term (bppt): <strong>@(cover.Bppt?.ToString() ?? "-")</strong></span>
@@ -195,59 +261,104 @@
                                 <div class="row g-3">
                                     <div class="col-md-2">
                                         <label class="form-label small mb-1" for="source-@index">Source</label>
-                                        <select class="form-select form-select-sm js-source" id="source-@index" name="@(prefix).Source">
+                                        <select class="form-select form-select-sm js-source"
+                                                id="source-@index"
+                                                name="@(prefix).Source">
                                             <option value="GLOBAL" selected="@(input.Source == "GLOBAL")">Global</option>
                                             <option value="OVERRIDE" selected="@(input.Source == "OVERRIDE")">Override</option>
                                         </select>
                                         @Html.ValidationMessage(prefix + ".Source", new { @class = "text-danger small" })
                                     </div>
+
                                     <div class="col-md-3">
                                         <label class="form-label small mb-1" for="decision-c@(index)">Decision</label>
-                                        <select class="form-select form-select-sm js-decision" id="decision-c@(index)" name="@(prefix).DecisionId">
+                                        <select class="form-select form-select-sm js-decision"
+                                                id="decision-c@(index)"
+                                                name="@(prefix).DecisionId">
                                             <option value="">Select decision...</option>
                                             @foreach (var decision in Model.Decisions)
                                             {
-                                                <option value="@decision.DecisionId" data-fields="@Model.FieldsCsv(decision.DecisionId)"
-                                                        selected="@(input.DecisionId == decision.DecisionId)">@decision.DecisionName</option>
+                                                <option value="@decision.DecisionId"
+                                                        data-fields="@Model.FieldsCsv(decision.DecisionId)"
+                                                        selected="@(input.DecisionId == decision.DecisionId)">
+                                                    @decision.DecisionName
+                                                </option>
                                             }
                                         </select>
                                         @Html.ValidationMessage(prefix + ".DecisionId", new { @class = "text-danger small" })
                                     </div>
-                                    <div class="col-md-3">
-                                        <label class="form-label small mb-1" for="reason-c@(index)">Reason <span class="text-danger js-reason-required" hidden>*</span></label>
-                                        <select class="form-select form-select-sm js-reason" id="reason-c@(index)" name="@(prefix).ReasonId">
-                                            <option value="">Select reason...</option>
+
+                                    <div class="col-md-7">
+                                        <div class="form-label small mb-1">
+                                            Reasons and their sub-reasons
+                                            <span class="text-danger js-reason-required" hidden>*</span>
+                                        </div>
+
+                                        <div class="js-reasons">
                                             @foreach (var reason in Model.ReasonsFor(kind))
                                             {
-                                                <option value="@reason.ReasonId" data-decision="@reason.DecisionId"
-                                                        selected="@(input.ReasonId == reason.ReasonId)">@reason.ReasonText</option>
+                                                var selectedReason = input.Reasons.FirstOrDefault(r => r.ReasonId == reason.ReasonId);
+                                                var reasonName = $"{prefix}.Reasons[{reason.ReasonId}]";
+
+                                                <input type="hidden"
+                                                       name="@(prefix).Reasons.Index"
+                                                       value="@reason.ReasonId" />
+
+                                                <div class="border rounded p-2 mb-2 js-reason-group"
+                                                     data-reason="@reason.ReasonId"
+                                                     data-decision="@reason.DecisionId">
+                                                    <div class="form-check">
+                                                        <input class="form-check-input js-reason-check"
+                                                               type="checkbox"
+                                                               id="reason-c@(index)-@reason.ReasonId"
+                                                               name="@(reasonName).ReasonId"
+                                                               value="@reason.ReasonId"
+                                                               checked="@(selectedReason is not null)" />
+                                                        <label class="form-check-label"
+                                                               for="reason-c@(index)-@reason.ReasonId">
+                                                            @reason.ReasonText
+                                                        </label>
+                                                    </div>
+
+                                                    @foreach (var sub in Model.SubReasonsFor(kind).Where(s => s.ReasonId == reason.ReasonId))
+                                                    {
+                                                        <div class="form-check ms-4 js-sub-item">
+                                                            <input class="form-check-input js-sub"
+                                                                   type="checkbox"
+                                                                   id="sub-c@(index)-@sub.SubReasonId"
+                                                                   name="@(reasonName).SubReasonIds"
+                                                                   value="@sub.SubReasonId"
+                                                                   checked="@(selectedReason?.SubReasonIds.Contains(sub.SubReasonId) ?? false)" />
+                                                            <label class="form-check-label small"
+                                                                   for="sub-c@(index)-@sub.SubReasonId">
+                                                                @sub.SubReasonText
+                                                            </label>
+                                                        </div>
+                                                    }
+                                                </div>
                                             }
-                                        </select>
-                                        @Html.ValidationMessage(prefix + ".ReasonId", new { @class = "text-danger small" })
-                                    </div>
-                                    <div class="col-md-4">
-                                        <div class="form-label small mb-1">Sub-reasons <span class="text-danger js-sub-required" hidden>*</span></div>
-                                        @foreach (var sub in Model.SubReasonsFor(kind))
-                                        {
-                                            <div class="form-check js-sub-item" data-reason="@sub.ReasonId">
-                                                <input class="form-check-input js-sub" type="checkbox" id="sub-c@(index)-@sub.SubReasonId"
-                                                       name="@(prefix).SubReasonIds" value="@sub.SubReasonId"
-                                                       checked="@input.SubReasonIds.Contains(sub.SubReasonId)" />
-                                                <label class="form-check-label small" for="sub-c@(index)-@sub.SubReasonId">@sub.SubReasonText</label>
-                                            </div>
-                                        }
-                                        @Html.ValidationMessage(prefix + ".SubReasonIds", new { @class = "text-danger small" })
+                                        </div>
+
+                                        @Html.ValidationMessage(prefix + ".Reasons", new { @class = "text-danger small" })
                                     </div>
                                 </div>
 
                                 <div class="row g-3 mt-0">
-                                    <div class="col-md-2 js-postpone" hidden="@(!Model.Shows(input.DecisionId, "PostponePeriod"))">
+                                    <div class="col-md-2 js-postpone"
+                                         hidden="@(!Model.Shows(input.DecisionId, "PostponePeriod"))">
                                         <label class="form-label small mb-1" for="postpone-@index">Postpone period</label>
-                                        <input type="number" min="0" max="999" class="form-control form-control-sm" id="postpone-@index"
-                                               name="@(prefix).PostponePeriod" value="@input.PostponePeriod" />
+                                        <input type="number"
+                                               min="0"
+                                               max="999"
+                                               class="form-control form-control-sm"
+                                               id="postpone-@index"
+                                               name="@(prefix).PostponePeriod"
+                                               value="@input.PostponePeriod" />
                                         @Html.ValidationMessage(prefix + ".PostponePeriod", new { @class = "text-danger small" })
                                     </div>
-                                    <div class="col-md-6 js-extras" hidden="@(!Model.Shows(input.DecisionId, "Extras"))">
+
+                                    <div class="col-md-6 js-extras"
+                                         hidden="@(!Model.Shows(input.DecisionId, "Extras"))">
                                         @if (allowedExtras.Count == 0)
                                         {
                                             <div class="form-text">No extras apply to this type of cover.</div>
@@ -257,26 +368,59 @@
                                             <div class="row g-2">
                                                 @foreach (var extra in Model.ExtraFields)
                                                 {
-                                                    if (!allowedExtras.Contains(extra.Name)) { continue; }
+                                                    if (!allowedExtras.Contains(extra.Name))
+                                                    {
+                                                        continue;
+                                                    }
+
                                                     var extraName = prefix + "." + extra.Name;
 
                                                     <div class="col-6 col-md-4">
-                                                        <label class="form-label small mb-1" for="@(extra.Name)-@index">@extra.Label</label>
-                                                        <input type="number" step="0.01" min="0" class="form-control form-control-sm"
-                                                               id="@(extra.Name)-@index" name="@extraName"
+                                                        <label class="form-label small mb-1"
+                                                               for="@(extra.Name)-@index">
+                                                            @extra.Label
+                                                        </label>
+                                                        <input type="number"
+                                                               step="0.01"
+                                                               min="0"
+                                                               class="form-control form-control-sm"
+                                                               id="@(extra.Name)-@index"
+                                                               name="@extraName"
                                                                value="@Model.Dec(Model.GetExtra(input, extra.Name))" />
                                                         @Html.ValidationMessage(extraName, new { @class = "text-danger small" })
                                                     </div>
                                                 }
                                             </div>
-                                            <div class="form-text">Leave a box empty for "not set". EMR 100 is standard.</div>
+                                            <div class="form-text">
+                                                Leave a box empty for "not set". EMR 100 is standard.
+                                            </div>
                                         }
                                     </div>
+
                                     <div class="col-md-4">
-                                        <label class="form-label small mb-1" for="notes-@index">Notes</label>
-                                        <input type="text" maxlength="500" class="form-control form-control-sm" id="notes-@index"
-                                               name="@(prefix).Notes" value="@input.Notes" />
-                                        @Html.ValidationMessage(prefix + ".Notes", new { @class = "text-danger small" })
+                                        <div class="js-global-note-area" hidden>
+                                            <label class="form-label small mb-1" for="global-notes-@index">
+                                                Global note (inherited)
+                                            </label>
+                                            <input type="text"
+                                                   class="form-control form-control-sm js-inherited-note"
+                                                   id="global-notes-@index"
+                                                   value=""
+                                                   readonly />
+                                        </div>
+
+                                        <div class="js-override-notes">
+                                            <label class="form-label small mb-1" for="notes-@index">
+                                                Override note
+                                            </label>
+                                            <input type="text"
+                                                   maxlength="500"
+                                                   class="form-control form-control-sm"
+                                                   id="notes-@index"
+                                                   name="@(prefix).Notes"
+                                                   value="@input.Notes" />
+                                            @Html.ValidationMessage(prefix + ".Notes", new { @class = "text-danger small" })
+                                        </div>
                                     </div>
                                 </div>
                             </li>

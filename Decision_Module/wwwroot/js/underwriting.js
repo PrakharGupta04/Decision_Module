@@ -1,117 +1,230 @@
-﻿// Underwriting page: dependent dropdowns, inherited global values and the global on/off switch.
+﻿
+(function () {
+    "use strict";
 
-var globalBlocks = {};
-document.querySelectorAll('.global-block').forEach(function (block) {
-    globalBlocks[block.dataset.kind] = block;
-});
+    const globalBlocks = {};
 
-function find(block, selector) {
-    return block.querySelector(selector);
-}
-
-// Hidden inputs are disabled so they are not posted.
-function setVisible(group, visible) {
-    if (!group) return;
-    group.hidden = !visible;
-    group.querySelectorAll('input').forEach(function (input) {
-        input.disabled = !visible;
-    });
-}
-
-// Brings one block (a global decision or a cover) in line with its current values.
-function refresh(block, locked) {
-    var decision = find(block, '.js-decision');
-    var reason = find(block, '.js-reason');
-    var fields = decision.options[decision.selectedIndex].dataset.fields || '';
-
-    var reasonCount = 0;
-    reason.querySelectorAll('option[data-decision]').forEach(function (option) {
-        var fits = option.dataset.decision === decision.value;
-        option.hidden = !fits;
-        option.disabled = !fits;
-        if (fits) reasonCount++;
-    });
-    if (reason.selectedOptions[0].disabled) reason.value = '';
-
-    var subCount = 0;
-    block.querySelectorAll('.js-sub-item').forEach(function (item) {
-        var fits = reason.value !== '' && item.dataset.reason === reason.value;
-        var box = item.querySelector('input');
-        item.hidden = !fits;
-        if (!fits) box.checked = false;
-        box.disabled = locked;
-        if (fits) subCount++;
+    document.querySelectorAll(".global-block").forEach(block => {
+        globalBlocks[block.dataset.kind] = block;
     });
 
-    decision.disabled = locked;
-    reason.disabled = locked || reasonCount === 0;
-    find(block, '.js-reason-required').hidden = reasonCount === 0;
-    find(block, '.js-sub-required').hidden = subCount === 0;
-
-    setVisible(find(block, '.js-postpone'), fields.indexOf('PostponePeriod') >= 0);
-    setVisible(find(block, '.js-extras'), fields.indexOf('Extras') >= 0);
-}
-
-// Copies the global decision of the cover's kind onto the cover.
-function copyFromGlobal(cover) {
-    var globalBlock = globalBlocks[cover.dataset.kind];
-
-    find(cover, '.js-decision').value = find(globalBlock, '.js-decision').value;
-    refresh(cover, false);
-    find(cover, '.js-reason').value = find(globalBlock, '.js-reason').value;
-
-    cover.querySelectorAll('.js-sub').forEach(function (box) {
-        var match = globalBlock.querySelector('.js-sub[value="' + box.value + '"]');
-        box.checked = match ? match.checked : false;
-    });
-}
-
-// A Global cover shows the global values and is locked. An Override cover is editable.
-function syncCover(cover) {
-    if (find(cover, '.js-source').value === 'GLOBAL') {
-        copyFromGlobal(cover);
-        refresh(cover, true);
-    } else {
-        refresh(cover, false);
-    }
-}
-
-function syncCovers(kind) {
-    document.querySelectorAll('.cover-block[data-kind="' + kind + '"]').forEach(syncCover);
-}
-
-// Unticked: every cover of this kind becomes Override and keeps the values it was showing.
-function applyGlobalSwitch(kind) {
-    var block = globalBlocks[kind];
-    var on = find(block, '.js-on').checked;
-    refresh(block, !on);
-
-    document.querySelectorAll('.cover-block[data-kind="' + kind + '"]').forEach(function (cover) {
-        var source = find(cover, '.js-source');
-        source.querySelector('option[value="GLOBAL"]').disabled = !on;
-        if (!on) source.value = 'OVERRIDE';
-        syncCover(cover);
-    });
-}
-
-document.addEventListener('change', function (event) {
-    var target = event.target;
-    var block = target.closest('.block');
-    if (!block || !target.matches('.js-on, .js-source, .js-decision, .js-reason, .js-sub')) return;
-
-    if (target.matches('.js-decision')) find(block, '.js-reason').value = '';
-    if (target.matches('.js-decision, .js-reason')) {
-        block.querySelectorAll('.js-sub').forEach(function (box) { box.checked = false; });
+    function find(block, selector) {
+        return block ? block.querySelector(selector) : null;
     }
 
-    if (!block.classList.contains('global-block')) {
-        syncCover(block);
-    } else if (target.matches('.js-on')) {
-        applyGlobalSwitch(block.dataset.kind);
-    } else {
-        refresh(block, false);
-        syncCovers(block.dataset.kind);
-    }
-});
+    function refresh(block, locked) {
+        if (!block) return;
 
-Object.keys(globalBlocks).forEach(applyGlobalSwitch);
+        const decision = find(block, ".js-decision");
+        const fields = decision?.selectedOptions?.[0]?.dataset.fields || "";
+
+        block.querySelectorAll(".js-reason-group").forEach(group => {
+            const reasonCheck = find(group, ".js-reason-check");
+            const fits = !!decision &&
+                decision.value !== "" &&
+                group.dataset.decision === decision.value;
+
+            group.hidden = !fits;
+
+            if (!fits && reasonCheck) {
+                reasonCheck.checked = false;
+            }
+
+            if (reasonCheck) {
+                reasonCheck.disabled = locked || !fits;
+            }
+
+            group.querySelectorAll(".js-sub-item").forEach(item => {
+                const sub = find(item, ".js-sub");
+                const active = fits && !!reasonCheck && reasonCheck.checked;
+
+                item.hidden = !active;
+
+                if (!active && sub) {
+                    sub.checked = false;
+                }
+
+                if (sub) {
+                    sub.disabled = locked || !active;
+                }
+            });
+        });
+
+        if (decision) {
+            decision.disabled = locked;
+        }
+
+        const postpone = find(block, ".js-postpone");
+        if (postpone) {
+            postpone.hidden = !fields.includes("PostponePeriod");
+            postpone.querySelectorAll("input,select,textarea").forEach(el => {
+                el.disabled = postpone.hidden;
+            });
+        }
+
+        const extras = find(block, ".js-extras");
+        if (extras) {
+            extras.hidden = !fields.includes("Extras");
+            extras.querySelectorAll("input,select,textarea").forEach(el => {
+                el.disabled = extras.hidden;
+            });
+        }
+    }
+
+    function copyFromGlobal(cover) {
+        const globalBlock = globalBlocks[cover.dataset.kind];
+        if (!globalBlock) return;
+
+        const globalDecision = find(globalBlock, ".js-decision");
+        const coverDecision = find(cover, ".js-decision");
+
+        if (globalDecision && coverDecision) {
+            coverDecision.value = globalDecision.value;
+        }
+
+        cover.querySelectorAll(".js-reason-group").forEach(group => {
+            const selector =
+                '.js-reason-group[data-reason="' + group.dataset.reason + '"]';
+
+            const globalGroup = globalBlock.querySelector(selector);
+            const targetReason = find(group, ".js-reason-check");
+            const sourceReason = find(globalGroup, ".js-reason-check");
+
+            if (targetReason) {
+                targetReason.checked = !!sourceReason && sourceReason.checked;
+            }
+
+            group.querySelectorAll(".js-sub").forEach(targetSub => {
+                const sourceSub = globalGroup
+                    ? globalGroup.querySelector(
+                        '.js-sub[value="' + targetSub.value + '"]'
+                    )
+                    : null;
+
+                targetSub.checked = !!sourceSub && sourceSub.checked;
+            });
+        });
+
+        const globalNotes = find(globalBlock, ".js-global-notes");
+        const inheritedNote = find(cover, ".js-inherited-note");
+
+        if (inheritedNote) {
+            inheritedNote.value = globalNotes ? globalNotes.value : "";
+        }
+    }
+
+    function syncCover(cover) {
+        const source = find(cover, ".js-source");
+        const locked = !!source && source.value === "GLOBAL";
+
+        if (locked) {
+            copyFromGlobal(cover);
+        }
+
+        refresh(cover, locked);
+
+        const inheritedArea = find(cover, ".js-global-note-area");
+        const overrideArea = find(cover, ".js-override-notes");
+
+        if (inheritedArea) {
+            inheritedArea.hidden = !locked;
+        }
+
+        if (overrideArea) {
+            overrideArea.hidden = locked;
+
+            overrideArea.querySelectorAll("input,textarea").forEach(el => {
+                el.disabled = locked;
+            });
+        }
+    }
+
+    function syncCovers(kind) {
+        document.querySelectorAll(".cover-block").forEach(cover => {
+            if (cover.dataset.kind === kind) {
+                syncCover(cover);
+            }
+        });
+    }
+
+    function applyGlobalSwitch(kind) {
+        const block = globalBlocks[kind];
+        if (!block) return;
+
+        const onBox = find(block, ".js-on");
+        const isOn = !!onBox && onBox.checked;
+
+        refresh(block, !isOn);
+
+        document.querySelectorAll(".cover-block").forEach(cover => {
+            if (cover.dataset.kind !== kind) return;
+
+            const source = find(cover, ".js-source");
+            const globalOption = source?.querySelector(
+                'option[value="GLOBAL"]'
+            );
+
+            if (globalOption) {
+                globalOption.disabled = !isOn;
+            }
+
+            if (!isOn && source && source.value === "GLOBAL") {
+                source.value = "OVERRIDE";
+            }
+
+            syncCover(cover);
+        });
+    }
+
+    document.addEventListener("change", event => {
+        const target = event.target;
+        const block = target.closest(".block");
+
+        if (!block) return;
+
+        if (target.matches(".js-on")) {
+            applyGlobalSwitch(block.dataset.kind);
+            return;
+        }
+
+        if (target.matches(".js-source")) {
+            syncCover(block);
+            return;
+        }
+
+        if (target.matches(".js-decision")) {
+            block.querySelectorAll(".js-reason-check, .js-sub").forEach(box => {
+                box.checked = false;
+            });
+        }
+
+        if (target.matches(".js-reason-check") && !target.checked) {
+            const group = target.closest(".js-reason-group");
+
+            group?.querySelectorAll(".js-sub").forEach(box => {
+                box.checked = false;
+            });
+        }
+
+        if (block.classList.contains("global-block")) {
+            refresh(block, !find(block, ".js-on").checked);
+            syncCovers(block.dataset.kind);
+        } else {
+            syncCover(block);
+        }
+    });
+
+    document.addEventListener("input", event => {
+        if (!event.target.matches(".js-global-notes")) return;
+
+        const block = event.target.closest(".global-block");
+
+        if (block) {
+            syncCovers(block.dataset.kind);
+        }
+    });
+
+    Object.keys(globalBlocks).forEach(applyGlobalSwitch);
+
+    document.querySelectorAll(".cover-block").forEach(syncCover);
+})();

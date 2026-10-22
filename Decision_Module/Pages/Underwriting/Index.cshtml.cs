@@ -149,44 +149,105 @@ public class IndexModel : PageModel
         return kinds;
     }
 
-    private void FillInputsFromDatabase()
-    {
-        var savedGlobals = _data.GetGlobalDecisions(CustomerId!);
-        var globalSubs = _data.GetGlobalSubReasons(CustomerId!);
-        var coverSubs = _data.GetCoverSubReasons(CustomerId!);
+	private void FillInputsFromDatabase()
+	{
+		var savedGlobals = _data.GetGlobalDecisions(CustomerId!);
+		var globalSubs = _data.GetGlobalSubReasons(CustomerId!);
+		var coverSubs = _data.GetCoverSubReasons(CustomerId!);
 
-        GlobalInputs = GlobalKinds.Select(kind =>
-        {
-            var saved = savedGlobals.FirstOrDefault(g => g.CoverKind == kind.Code);
-            return new GlobalInput
-            {
-                Kind = kind.Code,
-                On = saved?.IsOn ?? false,
-                DecisionId = saved?.DecisionId,
-                ReasonId = saved?.ReasonId,
-                SubReasonIds = globalSubs.Where(s => s.CoverKind == kind.Code).Select(s => s.SubReasonId).ToList()
-            };
-        }).ToList();
+		var globalReasonLinks = _data.GetGlobalReasons(CustomerId!);
+		var coverReasonLinks = _data.GetCoverReasons(CustomerId!);
 
-        CoverInputs = Covers.Select(cover => new CoverInput
-        {
-            UwId = cover.UwId,
-            Source = StartingSource(cover),
-            DecisionId = cover.DecisionId,
-            ReasonId = cover.ReasonId,
-            SubReasonIds = coverSubs.Where(s => s.UwId == cover.UwId).Select(s => s.SubReasonId).ToList(),
-            PostponePeriod = cover.PostponePeriod,
-            EMR = cover.EMR,
-            OccupationExtra = cover.OccupationExtra,
-            ResidentialExtra = cover.ResidentialExtra,
-            FlatExtra = cover.FlatExtra,
-            AgeExtra = cover.AgeExtra,
-            Notes = cover.Notes
-        }).ToList();
-    }
+		GlobalInputs = GlobalKinds.Select(kind =>
+		{
+			var saved = savedGlobals.FirstOrDefault(g => g.CoverKind == kind.Code);
 
-    // a cover follows the global decision only if its kind has one switched on
-    private string StartingSource(Cover cover)
+			var selectedReasonIds = saved == null
+				? new List<int>()
+				: globalReasonLinks
+					.Where(r => r.GlobalId == saved.GlobalId)
+					.Select(r => r.ReasonId)
+					.ToList();
+
+			// Support older saved decisions that have only the legacy ReasonId.
+			if (selectedReasonIds.Count == 0 && saved?.ReasonId is int oldReasonId)
+				selectedReasonIds.Add(oldReasonId);
+
+			var selectedSubIds = globalSubs
+				.Where(s => s.CoverKind == kind.Code)
+				.Select(s => s.SubReasonId)
+				.ToHashSet();
+
+			return new GlobalInput
+			{
+				Kind = kind.Code,
+				On = saved?.IsOn ?? false,
+				DecisionId = saved?.DecisionId,
+				ReasonId = selectedReasonIds.FirstOrDefault() is var id && id != 0
+					? id : null,
+				Notes = saved?.Notes,
+				Reasons = selectedReasonIds.Distinct().Select(reasonId =>
+					new ReasonInput
+					{
+						ReasonId = reasonId,
+						SubReasonIds = _subReasons
+							.Where(s => s.ReasonId == reasonId &&
+										selectedSubIds.Contains(s.SubReasonId))
+							.Select(s => s.SubReasonId)
+							.ToList()
+					}).ToList(),
+				SubReasonIds = selectedSubIds.ToList()
+			};
+		}).ToList();
+
+		CoverInputs = Covers.Select(cover =>
+		{
+			var selectedReasonIds = coverReasonLinks
+				.Where(r => r.UwId == cover.UwId)
+				.Select(r => r.ReasonId)
+				.Distinct()
+				.ToList();
+
+			// Backward compatibility with the old single-reason column.
+			if (selectedReasonIds.Count == 0 && cover.ReasonId is int oldReasonId)
+				selectedReasonIds.Add(oldReasonId);
+
+			var selectedSubIds = coverSubs
+				.Where(s => s.UwId == cover.UwId)
+				.Select(s => s.SubReasonId)
+				.ToHashSet();
+
+			return new CoverInput
+			{
+				UwId = cover.UwId,
+				Source = StartingSource(cover),
+				DecisionId = cover.DecisionId,
+				ReasonId = selectedReasonIds.FirstOrDefault() is var id && id != 0
+					? id : null,
+				Reasons = selectedReasonIds.Select(reasonId =>
+					new ReasonInput
+					{
+						ReasonId = reasonId,
+						SubReasonIds = _subReasons
+							.Where(s => s.ReasonId == reasonId &&
+										selectedSubIds.Contains(s.SubReasonId))
+							.Select(s => s.SubReasonId)
+							.ToList()
+					}).ToList(),
+				SubReasonIds = selectedSubIds.ToList(),
+				PostponePeriod = cover.PostponePeriod,
+				EMR = cover.EMR,
+				OccupationExtra = cover.OccupationExtra,
+				ResidentialExtra = cover.ResidentialExtra,
+				FlatExtra = cover.FlatExtra,
+				AgeExtra = cover.AgeExtra,
+				Notes = cover.Notes
+			};
+		}).ToList();
+	}
+
+	// a cover follows the global decision only if its kind has one switched on
+	private string StartingSource(Cover cover)
     {
         var globalIsOn = GlobalInputs.Any(g => g.Kind == KindOf(cover) && g.On);
         return globalIsOn ? cover.DecisionSource ?? "GLOBAL" : "OVERRIDE";
@@ -197,113 +258,185 @@ public class IndexModel : PageModel
         GlobalInputs.Select(g => g.Kind).SequenceEqual(GlobalKinds.Select(k => k.Code)) &&
         CoverInputs.Select(c => c.UwId).SequenceEqual(Covers.Select(c => c.UwId));
 
-    // ---------- validation ----------
+	// ---------- validation ----------
 
-    private void CheckGlobals()
-    {
-        for (var i = 0; i < GlobalInputs.Count; i++)
-        {
-            var input = GlobalInputs[i];
-            var prefix = $"GlobalInputs[{i}]";
 
-            if (!input.On)
-            {
-                input.DecisionId = null;
-                input.ReasonId = null;
-                input.SubReasonIds.Clear();
-            }
-            else if (input.DecisionId is null)
-            {
-                AddError(prefix + ".DecisionId", "Choose a decision, or untick this global decision.");
-            }
-            else
-            {
-                CheckReason(prefix, input.Kind, input);
-            }
-        }
-    }
+	private void CheckGlobals()
+	{
+		for (var i = 0; i < GlobalInputs.Count; i++)
+		{
+			var input = GlobalInputs[i];
+			var prefix = $"GlobalInputs[{i}]";
 
-    private void CheckCovers()
-    {
-        for (var i = 0; i < CoverInputs.Count; i++)
-        {
-            var input = CoverInputs[i];
-            var cover = Covers[i];
-            var prefix = $"CoverInputs[{i}]";
-            var kind = KindOf(cover);
-            var globalInput = GlobalInputs.First(g => g.Kind == kind);
+			if (!input.On)
+			{
+				input.DecisionId = null;
+				input.ReasonId = null;
+				input.Reasons.Clear();
+				input.SubReasonIds.Clear();
+				continue;
+			}
 
-            if (input.Source == "GLOBAL")
-            {
-                if (!globalInput.On)
-                {
-                    AddError(prefix + ".Source", "The global decision is switched off. Choose Override.");
-                }
-                else
-                {
-                    input.DecisionId = globalInput.DecisionId;
-                    input.ReasonId = globalInput.ReasonId;
-                    input.SubReasonIds = globalInput.SubReasonIds.ToList();
-                }
-            }
-            else if (input.Source == "OVERRIDE")
-            {
-                if (input.DecisionId is null)
-                {
-                    input.ReasonId = null;
-                    input.SubReasonIds.Clear();
-                }
-                else
-                {
-                    CheckReason(prefix, kind, input);
-                }
-            }
-            else
-            {
-                AddError(prefix + ".Source", "Choose Global or Override.");
-            }
+			if (input.DecisionId is null)
+			{
+				AddError(
+					prefix + ".DecisionId",
+					"Choose a decision, or untick this global decision.");
+				continue;
+			}
 
-            KeepApplicableDetails(cover, input);
-            CheckDetails(prefix, input);
-        }
-    }
+			CheckReasons(prefix, input.Kind, input);
+		}
+	}
 
-    // A reason is needed when the catalogue has reasons for this decision and cover kind.
-    // If the reason has sub-reasons, at least one must be chosen.
-    private void CheckReason(string prefix, string kind, DecisionInput input)
-    {
-        if (!Decisions.Any(d => d.DecisionId == input.DecisionId))
-        {
-            AddError(prefix + ".DecisionId", "Choose a valid decision.");
-            return;
-        }
 
-        var reasons = ReasonsFor(kind).Where(r => r.DecisionId == input.DecisionId).ToList();
-        if (reasons.Count == 0)
-        {
-            input.ReasonId = null;
-            input.SubReasonIds.Clear();
-            return;
-        }
-        if (input.ReasonId is null || !reasons.Any(r => r.ReasonId == input.ReasonId))
-        {
-            AddError(prefix + ".ReasonId", "Choose a reason.");
-            return;
-        }
 
-        var subReasons = _subReasons.Where(s => s.ReasonId == input.ReasonId).ToList();
-        input.SubReasonIds = input.SubReasonIds.Distinct().ToList();
+	private void CheckCovers()
+	{
+		for (var i = 0; i < CoverInputs.Count; i++)
+		{
+			var input = CoverInputs[i];
+			var cover = Covers[i];
+			var prefix = $"CoverInputs[{i}]";
+			var kind = KindOf(cover);
+			var globalInput = GlobalInputs.First(g => g.Kind == kind);
 
-        if (subReasons.Count == 0)
-            input.SubReasonIds.Clear();
-        else if (input.SubReasonIds.Count == 0)
-            AddError(prefix + ".SubReasonIds", "Select at least one sub-reason.");
-        else if (input.SubReasonIds.Any(id => subReasons.All(s => s.SubReasonId != id)))
-            AddError(prefix + ".SubReasonIds", "A selected sub-reason does not belong to this reason.");
-    }
+			if (input.Source == "GLOBAL")
+			{
+				if (!globalInput.On)
+				{
+					AddError(
+						prefix + ".Source",
+						"The global decision is switched off. Choose Override.");
+				}
+				else
+				{
+					input.DecisionId = globalInput.DecisionId;
+					input.ReasonId = globalInput.ReasonId;
 
-    // postpone period and extras are kept only where the decision and the cover use them
-    private void KeepApplicableDetails(Cover cover, CoverInput input)
+					input.Reasons = globalInput.Reasons
+						.Select(r => new ReasonInput
+						{
+							ReasonId = r.ReasonId,
+							SubReasonIds = r.SubReasonIds.ToList()
+						})
+						.ToList();
+
+					input.SubReasonIds = globalInput.SubReasonIds.ToList();
+				}
+			}
+			else if (input.Source == "OVERRIDE")
+			{
+				if (input.DecisionId is null)
+				{
+					input.ReasonId = null;
+					input.Reasons.Clear();
+					input.SubReasonIds.Clear();
+				}
+				else
+				{
+					CheckReasons(prefix, kind, input);
+				}
+			}
+			else
+			{
+				AddError(
+					prefix + ".Source",
+					"Choose Global or Override.");
+			}
+
+			KeepApplicableDetails(cover, input);
+			CheckDetails(prefix, input);
+		}
+	}
+
+
+	// A reason is needed when the catalogue has reasons for this decision and cover kind.
+	// If the reason has sub-reasons, at least one must be chosen.
+
+	private void CheckReasons(string prefix, string kind, DecisionInput input)
+	{
+		if (!Decisions.Any(d => d.DecisionId == input.DecisionId))
+		{
+			AddError(prefix + ".DecisionId", "Choose a valid decision.");
+			return;
+		}
+
+		var allowedReasons = ReasonsFor(kind)
+			.Where(r => r.DecisionId == input.DecisionId)
+			.ToList();
+
+		if (allowedReasons.Count == 0)
+		{
+			input.Reasons.Clear();
+			input.ReasonId = null;
+			input.SubReasonIds.Clear();
+			return;
+		}
+
+		input.Reasons = input.Reasons
+			.Where(r => r.ReasonId > 0)
+			.GroupBy(r => r.ReasonId)
+			.Select(g => g.First())
+			.ToList();
+
+		if (input.Reasons.Count == 0)
+		{
+			AddError(prefix + ".Reasons", "Choose at least one reason.");
+			return;
+		}
+
+		for (var i = 0; i < input.Reasons.Count; i++)
+		{
+			var selected = input.Reasons[i];
+			var reasonPrefix = $"{prefix}.Reasons[{selected.ReasonId}]";
+
+			if (!allowedReasons.Any(r => r.ReasonId == selected.ReasonId))
+			{
+				AddError(
+					reasonPrefix + ".ReasonId",
+					"A selected reason is not valid for this decision and cover type.");
+				continue;
+			}
+
+			var allowedSubReasons = _subReasons
+				.Where(s => s.ReasonId == selected.ReasonId)
+				.Select(s => s.SubReasonId)
+				.ToHashSet();
+
+			selected.SubReasonIds = selected.SubReasonIds
+				.Distinct()
+				.ToList();
+
+			if (allowedSubReasons.Count == 0)
+			{
+				selected.SubReasonIds.Clear();
+			}
+			else if (selected.SubReasonIds.Count == 0)
+			{
+				AddError(
+					reasonPrefix + ".SubReasonIds",
+					"Select at least one sub-reason for this reason.");
+			}
+			else if (selected.SubReasonIds.Any(id => !allowedSubReasons.Contains(id)))
+			{
+				AddError(
+					reasonPrefix + ".SubReasonIds",
+					"A selected sub-reason does not belong to this reason.");
+			}
+		}
+
+		input.ReasonId = input.Reasons.FirstOrDefault()?.ReasonId;
+
+		input.SubReasonIds = input.Reasons
+			.SelectMany(r => r.SubReasonIds)
+			.Distinct()
+			.ToList();
+	}
+
+
+	// postpone period and extras are kept only where the decision and the cover use them
+	private void KeepApplicableDetails(Cover cover, CoverInput input)
     {
         var fields = FieldsFor(input.DecisionId);
         if (!fields.Contains("PostponePeriod")) input.PostponePeriod = null;
