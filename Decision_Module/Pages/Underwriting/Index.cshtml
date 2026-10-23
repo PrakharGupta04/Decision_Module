@@ -1,4 +1,5 @@
-﻿@page
+﻿
+@page
 @model Decision_Module.Pages.Underwriting.IndexModel
 @{
     ViewData["Title"] = "Underwriting Decision";
@@ -121,6 +122,17 @@
                                         <span class="text-danger js-reason-required" hidden>*</span>
                                     </div>
 
+                                    <div class="mb-2">
+                                        <label class="form-label small mb-1" for="reason-search-g@(g)">
+                                            Search reasons
+                                        </label>
+                                        <input type="search"
+                                               class="form-control form-control-sm js-reason-search"
+                                               id="reason-search-g@(g)"
+                                               placeholder="Type a reason or sub-reason..."
+                                               autocomplete="off" />
+                                    </div>
+
                                     <div class="js-reasons">
                                         @foreach (var reason in Model.ReasonsFor(kind.Code))
                                         {
@@ -133,7 +145,8 @@
 
                                             <div class="border rounded p-2 mb-2 js-reason-group"
                                                  data-reason="@reason.ReasonId"
-                                                 data-decision="@reason.DecisionId">
+                                                 data-decision="@reason.DecisionId"
+                                                 data-reason-text="@reason.ReasonText">
                                                 <div class="form-check">
                                                     <input class="form-check-input js-reason-check"
                                                            type="checkbox"
@@ -149,7 +162,8 @@
 
                                                 @foreach (var sub in Model.SubReasonsFor(kind.Code).Where(s => s.ReasonId == reason.ReasonId))
                                                 {
-                                                    <div class="form-check ms-4 js-sub-item">
+                                                    <div class="form-check ms-4 js-sub-item"
+                                                         data-subreason-text="@sub.SubReasonText">
                                                         <input class="form-check-input js-sub"
                                                                type="checkbox"
                                                                id="sub-g@(g)-@sub.SubReasonId"
@@ -294,6 +308,17 @@
                                             <span class="text-danger js-reason-required" hidden>*</span>
                                         </div>
 
+                                        <div class="mb-2">
+                                            <label class="form-label small mb-1" for="reason-search-c@(index)">
+                                                Search reasons
+                                            </label>
+                                            <input type="search"
+                                                   class="form-control form-control-sm js-reason-search"
+                                                   id="reason-search-c@(index)"
+                                                   placeholder="Type a reason or sub-reason..."
+                                                   autocomplete="off" />
+                                        </div>
+
                                         <div class="js-reasons">
                                             @foreach (var reason in Model.ReasonsFor(kind))
                                             {
@@ -306,7 +331,8 @@
 
                                                 <div class="border rounded p-2 mb-2 js-reason-group"
                                                      data-reason="@reason.ReasonId"
-                                                     data-decision="@reason.DecisionId">
+                                                     data-decision="@reason.DecisionId"
+                                                     data-reason-text="@reason.ReasonText">
                                                     <div class="form-check">
                                                         <input class="form-check-input js-reason-check"
                                                                type="checkbox"
@@ -322,7 +348,8 @@
 
                                                     @foreach (var sub in Model.SubReasonsFor(kind).Where(s => s.ReasonId == reason.ReasonId))
                                                     {
-                                                        <div class="form-check ms-4 js-sub-item">
+                                                        <div class="form-check ms-4 js-sub-item"
+                                                             data-subreason-text="@sub.SubReasonText">
                                                             <input class="form-check-input js-sub"
                                                                    type="checkbox"
                                                                    id="sub-c@(index)-@sub.SubReasonId"

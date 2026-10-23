@@ -12,14 +12,76 @@
         return block ? block.querySelector(selector) : null;
     }
 
+    // Search reasons and sub-reasons within their own section.
+    function applyReasonSearch(block) {
+        if (!block) return;
+
+        const search = find(block, ".js-reason-search");
+        const query = (search?.value || "").trim().toLocaleLowerCase();
+        const decision = find(block, ".js-decision");
+        const decisionValue = decision?.value || "";
+
+        block.querySelectorAll(".js-reason-group").forEach(group => {
+            const reasonText =
+                (group.dataset.reasonText || "").toLocaleLowerCase();
+
+            const reasonMatches =
+                query === "" || reasonText.includes(query);
+
+            const reasonCheck = find(group, ".js-reason-check");
+            const selectedParent = !!reasonCheck?.checked;
+
+            const eligible =
+                decisionValue !== "" &&
+                group.dataset.decision === decisionValue;
+
+            const subItems = group.querySelectorAll(".js-sub-item");
+            let matchingSubreasonFound = false;
+
+            subItems.forEach(item => {
+                const subText = (
+                    item.dataset.subreasonText ||
+                    item.textContent ||
+                    ""
+                ).toLocaleLowerCase();
+
+                const subMatches =
+                    query === "" || subText.includes(query);
+
+                if (subMatches) {
+                    matchingSubreasonFound = true;
+                }
+
+                // With no search, preserve the existing expand/collapse
+                // behavior: sub-reasons appear after selecting their reason.
+                //
+                // During a search, matching sub-reasons can be found even
+                // before their parent reason has been selected.
+                item.hidden = query === ""
+                    ? !(eligible && selectedParent)
+                    : !(eligible && (reasonMatches || subMatches));
+            });
+
+            // Show the reason if its text matches or one of its sub-reasons
+            // matches. Do not change any checkbox selections here.
+            group.hidden =
+                !eligible ||
+                (query !== "" &&
+                 !reasonMatches &&
+                 !matchingSubreasonFound);
+        });
+    }
+
     function refresh(block, locked) {
         if (!block) return;
 
         const decision = find(block, ".js-decision");
-        const fields = decision?.selectedOptions?.[0]?.dataset.fields || "";
+        const fields =
+            decision?.selectedOptions?.[0]?.dataset.fields || "";
 
         block.querySelectorAll(".js-reason-group").forEach(group => {
             const reasonCheck = find(group, ".js-reason-check");
+
             const fits = !!decision &&
                 decision.value !== "" &&
                 group.dataset.decision === decision.value;
@@ -36,7 +98,8 @@
 
             group.querySelectorAll(".js-sub-item").forEach(item => {
                 const sub = find(item, ".js-sub");
-                const active = fits && !!reasonCheck && reasonCheck.checked;
+                const active =
+                    fits && !!reasonCheck && reasonCheck.checked;
 
                 item.hidden = !active;
 
@@ -55,24 +118,32 @@
         }
 
         const postpone = find(block, ".js-postpone");
+
         if (postpone) {
             postpone.hidden = !fields.includes("PostponePeriod");
+
             postpone.querySelectorAll("input,select,textarea").forEach(el => {
                 el.disabled = postpone.hidden;
             });
         }
 
         const extras = find(block, ".js-extras");
+
         if (extras) {
             extras.hidden = !fields.includes("Extras");
+
             extras.querySelectorAll("input,select,textarea").forEach(el => {
                 el.disabled = extras.hidden;
             });
         }
+
+        // Reapply the search after decision visibility has been updated.
+        applyReasonSearch(block);
     }
 
     function copyFromGlobal(cover) {
         const globalBlock = globalBlocks[cover.dataset.kind];
+
         if (!globalBlock) return;
 
         const globalDecision = find(globalBlock, ".js-decision");
@@ -84,14 +155,17 @@
 
         cover.querySelectorAll(".js-reason-group").forEach(group => {
             const selector =
-                '.js-reason-group[data-reason="' + group.dataset.reason + '"]';
+                '.js-reason-group[data-reason="' +
+                group.dataset.reason +
+                '"]';
 
             const globalGroup = globalBlock.querySelector(selector);
             const targetReason = find(group, ".js-reason-check");
             const sourceReason = find(globalGroup, ".js-reason-check");
 
             if (targetReason) {
-                targetReason.checked = !!sourceReason && sourceReason.checked;
+                targetReason.checked =
+                    !!sourceReason && sourceReason.checked;
             }
 
             group.querySelectorAll(".js-sub").forEach(targetSub => {
@@ -101,7 +175,8 @@
                     )
                     : null;
 
-                targetSub.checked = !!sourceSub && sourceSub.checked;
+                targetSub.checked =
+                    !!sourceSub && sourceSub.checked;
             });
         });
 
@@ -149,6 +224,7 @@
 
     function applyGlobalSwitch(kind) {
         const block = globalBlocks[kind];
+
         if (!block) return;
 
         const onBox = find(block, ".js-on");
@@ -160,6 +236,7 @@
             if (cover.dataset.kind !== kind) return;
 
             const source = find(cover, ".js-source");
+
             const globalOption = source?.querySelector(
                 'option[value="GLOBAL"]'
             );
@@ -175,6 +252,17 @@
             syncCover(cover);
         });
     }
+
+    // Handle reason searches independently for each Global or Cover section.
+    document.addEventListener("input", event => {
+        if (!event.target.matches(".js-reason-search")) return;
+
+        const block = event.target.closest(".block");
+
+        if (block) {
+            applyReasonSearch(block);
+        }
+    });
 
     document.addEventListener("change", event => {
         const target = event.target;
@@ -214,6 +302,7 @@
         }
     });
 
+    // Keep inherited global notes synchronized with cover sections.
     document.addEventListener("input", event => {
         if (!event.target.matches(".js-global-notes")) return;
 
@@ -224,6 +313,7 @@
         }
     });
 
+    // Initialize Global decisions and covers on page load.
     Object.keys(globalBlocks).forEach(applyGlobalSwitch);
 
     document.querySelectorAll(".cover-block").forEach(syncCover);
