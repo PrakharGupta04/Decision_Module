@@ -1,5 +1,4 @@
-﻿
-@page
+﻿@page
 @model Decision_Module.Pages.Underwriting.IndexModel
 @{
     ViewData["Title"] = "Underwriting Decision";
@@ -10,7 +9,8 @@
 <form method="get" class="row g-2 mb-3">
     <div class="col-auto">
         <label asp-for="CustomerId" class="visually-hidden">Customer ID</label>
-        <input asp-for="CustomerId" class="form-control" placeholder="Customer ID" maxlength="20" autofocus />
+        <input asp-for="CustomerId" class="form-control"
+               placeholder="Customer ID" maxlength="20" autofocus />
     </div>
     <div class="col-auto">
         <button type="submit" class="btn btn-primary">Search</button>
@@ -31,7 +31,9 @@
 }
 @if (Model.Customer is not null && !Model.ModelState.IsValid)
 {
-    <div class="alert alert-danger">Nothing was saved. Please fix the fields marked in red.</div>
+    <div class="alert alert-danger">
+        Nothing was saved. Please fix the fields marked in red.
+    </div>
 }
 
 @if (Model.Customer is not null)
@@ -65,7 +67,9 @@
 
     @if (Model.Policies.Count == 0)
     {
-        <div class="alert alert-secondary">No policies on record for this customer.</div>
+        <div class="alert alert-secondary">
+            No policies on record for this customer.
+        </div>
     }
     else
     {
@@ -73,33 +77,43 @@
             <input type="hidden" name="CustomerId" value="@Model.CustomerId" />
 
             <h2 class="h5">Global decisions</h2>
-            <div class="card mb-4">
+
+            <div class="card mb-4 global-decisions">
                 <ul class="list-group list-group-flush">
                     @for (var g = 0; g < Model.GlobalKinds.Count; g++)
                     {
                         var kind = Model.GlobalKinds[g];
                         var globalInput = Model.GlobalInputs[g];
                         var prefix = $"GlobalInputs[{g}]";
+                        var reasons = Model.ReasonsFor(kind.Code).ToList();
+                        var subReasons = Model.SubReasonsFor(kind.Code).ToList();
 
-                        <li class="list-group-item block global-block" data-kind="@kind.Code">
-                            <div class="row g-3">
-                                <div class="col-md-2">
-                                    <input type="hidden" name="@(prefix).Kind" value="@kind.Code" />
-                                    <div class="form-check">
+                        <li class="list-group-item block global-block"
+                            data-kind="@kind.Code">
+
+                            <input type="hidden"
+                                   name="@(prefix).Kind"
+                                   value="@kind.Code" />
+
+                            <div class="global-decision-row">
+                                <div class="global-kind">
+                                    <div class="form-check mb-0">
                                         <input class="form-check-input rounded-circle js-on"
                                                type="checkbox"
                                                id="on-@g"
                                                name="@(prefix).On"
                                                value="true"
                                                checked="@globalInput.On" />
-                                        <label class="form-check-label fw-semibold" for="on-@g">
+                                        <label class="form-check-label fw-semibold"
+                                               for="on-@g">
                                             @kind.Label
                                         </label>
                                     </div>
                                 </div>
 
-                                <div class="col-md-3">
-                                    <label class="form-label small mb-1" for="decision-g@(g)">Decision</label>
+                                <div class="global-field">
+                                    <label class="form-label small"
+                                           for="decision-g@(g)">Decision</label>
                                     <select class="form-select form-select-sm js-decision"
                                             id="decision-g@(g)"
                                             name="@(prefix).DecisionId">
@@ -113,86 +127,126 @@
                                             </option>
                                         }
                                     </select>
-                                    @Html.ValidationMessage(prefix + ".DecisionId", new { @class = "text-danger small" })
+                                    @Html.ValidationMessage(prefix + ".DecisionId",
+                                        new { @class = "text-danger small" })
                                 </div>
 
-                                <div class="col-md-7">
-                                    <div class="form-label small mb-1">
-                                        Reasons and their sub-reasons
+                                <div class="global-field">
+                                    <label class="form-label small"
+                                           for="reason-search-g@(g)">
+                                        Reasons
                                         <span class="text-danger js-reason-required" hidden>*</span>
-                                    </div>
+                                    </label>
 
-                                    <div class="mb-2">
-                                        <label class="form-label small mb-1" for="reason-search-g@(g)">
-                                            Search reasons
-                                        </label>
-                                        <input type="search"
-                                               class="form-control form-control-sm js-reason-search"
-                                               id="reason-search-g@(g)"
-                                               placeholder="Type a reason or sub-reason..."
-                                               autocomplete="off" />
-                                    </div>
-
-                                    <div class="js-reasons">
-                                        @foreach (var reason in Model.ReasonsFor(kind.Code))
-                                        {
-                                            var selectedReason = globalInput.Reasons.FirstOrDefault(r => r.ReasonId == reason.ReasonId);
-                                            var reasonName = $"{prefix}.Reasons[{reason.ReasonId}]";
-
-                                            <input type="hidden"
-                                                   name="@(prefix).Reasons.Index"
-                                                   value="@reason.ReasonId" />
-
-                                            <div class="border rounded p-2 mb-2 js-reason-group"
-                                                 data-reason="@reason.ReasonId"
-                                                 data-decision="@reason.DecisionId"
-                                                 data-reason-text="@reason.ReasonText">
-                                                <div class="form-check">
-                                                    <input class="form-check-input js-reason-check"
-                                                           type="checkbox"
-                                                           id="reason-g@(g)-@reason.ReasonId"
-                                                           name="@(reasonName).ReasonId"
-                                                           value="@reason.ReasonId"
-                                                           checked="@(selectedReason is not null)" />
-                                                    <label class="form-check-label"
-                                                           for="reason-g@(g)-@reason.ReasonId">
-                                                        @reason.ReasonText
-                                                    </label>
-                                                </div>
-
-                                                @foreach (var sub in Model.SubReasonsFor(kind.Code).Where(s => s.ReasonId == reason.ReasonId))
+                                    <details class="multi-picker js-global-reason-picker">
+                                        <summary class="form-select form-select-sm">
+                                            <span class="js-picker-label">Select reasons...</span>
+                                        </summary>
+                                        <div class="multi-picker-menu">
+                                            <input type="search"
+                                                   class="form-control form-control-sm mb-2 js-reason-search"
+                                                   id="reason-search-g@(g)"
+                                                   placeholder="Search reasons..."
+                                                   autocomplete="off" />
+                                            <div class="multi-picker-options js-global-reason-options">
+                                                @foreach (var reason in reasons)
                                                 {
-                                                    <div class="form-check ms-4 js-sub-item"
-                                                         data-subreason-text="@sub.SubReasonText">
-                                                        <input class="form-check-input js-sub"
+                                                    var selectedReason = globalInput.Reasons
+                                                        .FirstOrDefault(r => r.ReasonId == reason.ReasonId);
+
+                                                    <input type="hidden"
+                                                           name="@(prefix).Reasons.Index"
+                                                           value="@reason.ReasonId" />
+
+                                                    <label class="multi-option js-global-reason-option"
+                                                           data-reason="@reason.ReasonId"
+                                                           data-decision="@reason.DecisionId"
+                                                           data-search="@reason.ReasonText">
+                                                        <input class="form-check-input js-reason-check"
                                                                type="checkbox"
-                                                               id="sub-g@(g)-@sub.SubReasonId"
-                                                               name="@(reasonName).SubReasonIds"
-                                                               value="@sub.SubReasonId"
-                                                               checked="@(selectedReason?.SubReasonIds.Contains(sub.SubReasonId) ?? false)" />
-                                                        <label class="form-check-label small"
-                                                               for="sub-g@(g)-@sub.SubReasonId">
-                                                            @sub.SubReasonText
-                                                        </label>
-                                                    </div>
+                                                               name="@(prefix).Reasons[@reason.ReasonId].ReasonId"
+                                                               value="@reason.ReasonId"
+                                                               checked="@(selectedReason is not null)" />
+                                                        <span>@reason.ReasonText</span>
+                                                    </label>
                                                 }
                                             </div>
-                                        }
-                                    </div>
+                                        </div>
+                                    </details>
 
-                                    @Html.ValidationMessage(prefix + ".Reasons", new { @class = "text-danger small" })
+                                    <div class="selected-chips js-reason-chips"
+                                         aria-label="Selected reasons"></div>
+
+                                    @Html.ValidationMessage(prefix + ".Reasons",
+                                        new { @class = "text-danger small" })
                                 </div>
 
-                                <div class="col-md-3">
-                                    <label class="form-label small mb-1" for="notes-g@(g)">Global note</label>
-                                    <input type="text"
-                                           maxlength="500"
-                                           class="form-control form-control-sm js-global-notes"
-                                           id="notes-g@(g)"
-                                           name="@(prefix).Notes"
-                                           value="@globalInput.Notes" />
-                                    @Html.ValidationMessage(prefix + ".Notes", new { @class = "text-danger small" })
+                                <div class="global-field">
+                                    <label class="form-label small"
+                                           for="sub-search-g@(g)">
+                                        Sub-reasons
+                                        <span class="text-danger js-sub-required" hidden>*</span>
+                                    </label>
+
+                                    <details class="multi-picker js-global-sub-picker">
+                                        <summary class="form-select form-select-sm">
+                                            <span class="js-picker-label">Select sub-reasons...</span>
+                                        </summary>
+                                        <div class="multi-picker-menu">
+                                            <input type="search"
+                                                   class="form-control form-control-sm mb-2 js-sub-search"
+                                                   id="sub-search-g@(g)"
+                                                   placeholder="Search sub-reasons..."
+                                                   autocomplete="off" />
+
+                                            <div class="multi-picker-options js-global-sub-options">
+                                                @foreach (var reason in reasons)
+                                                {
+                                                    var selectedReason = globalInput.Reasons
+                                                        .FirstOrDefault(r => r.ReasonId == reason.ReasonId);
+                                                    var reasonName = $"{prefix}.Reasons[{reason.ReasonId}]";
+
+                                                    @foreach (var sub in subReasons.Where(s => s.ReasonId == reason.ReasonId))
+                                                    {
+                                                        <label class="multi-option js-global-sub-option"
+                                                               data-reason="@reason.ReasonId"
+                                                               data-subreason="@sub.SubReasonId"
+                                                               data-search="@($"{reason.ReasonText} {sub.SubReasonText}")">
+                                                            <input class="form-check-input js-sub"
+                                                                   type="checkbox"
+                                                                   name="@(reasonName).SubReasonIds"
+                                                                   value="@sub.SubReasonId"
+                                                                   checked="@(selectedReason?.SubReasonIds.Contains(sub.SubReasonId) ?? false)" />
+                                                            <span>
+                                                                <span class="sub-parent">@reason.ReasonText</span>
+                                                                @sub.SubReasonText
+                                                            </span>
+                                                        </label>
+                                                    }
+                                                }
+                                            </div>
+                                        </div>
+                                    </details>
+
+                                    <div class="selected-chips js-sub-chips"
+                                         aria-label="Selected sub-reasons"></div>
+                                    @Html.ValidationMessage(prefix + ".Reasons",
+                                        new { @class = "text-danger small" })
                                 </div>
+                            </div>
+
+                            <div class="global-note-row">
+                                <label class="form-label small mb-0"
+                                       for="notes-g@(g)">Note</label>
+                                <input type="text"
+                                       maxlength="500"
+                                       class="form-control form-control-sm js-global-notes"
+                                       id="notes-g@(g)"
+                                       name="@(prefix).Notes"
+                                       value="@globalInput.Notes"
+                                       placeholder="Add a global note..." />
+                                @Html.ValidationMessage(prefix + ".Notes",
+                                    new { @class = "text-danger small" })
                             </div>
                         </li>
                     }
@@ -245,28 +299,28 @@
                             var isBase = cover.CoverType == "BASE";
                             var allowedExtras = Model.AllowedExtras(cover);
 
-                            <li class="list-group-item block cover-block" data-kind="@kind">
-                                <input type="hidden" name="@(prefix).UwId" value="@cover.UwId" />
+                            <li class="list-group-item block cover-block"
+                                data-kind="@kind">
+
+                                <input type="hidden"
+                                       name="@(prefix).UwId"
+                                       value="@cover.UwId" />
 
                                 <div class="d-flex flex-wrap align-items-baseline column-gap-4 row-gap-1 mb-3 small">
                                     <span class="fs-6 fw-semibold">
                                         @(isBase ? "Base cover" : cover.RiderTypeName)
                                     </span>
-                                    <span class="text-muted">@(isBase ? cover.BaseCoverId : cover.RiderId)</span>
+                                    <span class="text-muted">
+                                        @(isBase ? cover.BaseCoverId : cover.RiderId)
+                                    </span>
 
                                     @if (isBase && cover.BaseCoverType is not null)
                                     {
                                         <span class="badge text-bg-light border">@cover.BaseCoverType</span>
                                     }
 
-                                    <span>
-                                        Sum assured:
-                                        <strong>@(cover.BenefitSumAssured?.ToString("N0") ?? "-")</strong>
-                                    </span>
-                                    <span>
-                                        Premium:
-                                        <strong>@(cover.BenefitInstalmentPremium?.ToString("N0") ?? "-")</strong>
-                                    </span>
+                                    <span>Sum assured: <strong>@(cover.BenefitSumAssured?.ToString("N0") ?? "-")</strong></span>
+                                    <span>Premium: <strong>@(cover.BenefitInstalmentPremium?.ToString("N0") ?? "-")</strong></span>
                                     <span>Frequency: <strong>@frequency</strong></span>
                                     <span>Term (bterm): <strong>@(cover.Bterm?.ToString() ?? "-")</strong></span>
                                     <span>Premium paying term (bppt): <strong>@(cover.Bppt?.ToString() ?? "-")</strong></span>
@@ -274,18 +328,23 @@
 
                                 <div class="row g-3">
                                     <div class="col-md-2">
-                                        <label class="form-label small mb-1" for="source-@index">Source</label>
+                                        <label class="form-label small mb-1"
+                                               for="source-@index">Source</label>
                                         <select class="form-select form-select-sm js-source"
                                                 id="source-@index"
                                                 name="@(prefix).Source">
-                                            <option value="GLOBAL" selected="@(input.Source == "GLOBAL")">Global</option>
-                                            <option value="OVERRIDE" selected="@(input.Source == "OVERRIDE")">Override</option>
+                                            <option value="GLOBAL"
+                                                    selected="@(input.Source == "GLOBAL")">Global</option>
+                                            <option value="OVERRIDE"
+                                                    selected="@(input.Source == "OVERRIDE")">Override</option>
                                         </select>
-                                        @Html.ValidationMessage(prefix + ".Source", new { @class = "text-danger small" })
+                                        @Html.ValidationMessage(prefix + ".Source",
+                                            new { @class = "text-danger small" })
                                     </div>
 
                                     <div class="col-md-3">
-                                        <label class="form-label small mb-1" for="decision-c@(index)">Decision</label>
+                                        <label class="form-label small mb-1"
+                                               for="decision-c@(index)">Decision</label>
                                         <select class="form-select form-select-sm js-decision"
                                                 id="decision-c@(index)"
                                                 name="@(prefix).DecisionId">
@@ -299,7 +358,8 @@
                                                 </option>
                                             }
                                         </select>
-                                        @Html.ValidationMessage(prefix + ".DecisionId", new { @class = "text-danger small" })
+                                        @Html.ValidationMessage(prefix + ".DecisionId",
+                                            new { @class = "text-danger small" })
                                     </div>
 
                                     <div class="col-md-7">
@@ -309,9 +369,8 @@
                                         </div>
 
                                         <div class="mb-2">
-                                            <label class="form-label small mb-1" for="reason-search-c@(index)">
-                                                Search reasons
-                                            </label>
+                                            <label class="form-label small mb-1"
+                                                   for="reason-search-c@(index)">Search reasons</label>
                                             <input type="search"
                                                    class="form-control form-control-sm js-reason-search"
                                                    id="reason-search-c@(index)"
@@ -322,7 +381,8 @@
                                         <div class="js-reasons">
                                             @foreach (var reason in Model.ReasonsFor(kind))
                                             {
-                                                var selectedReason = input.Reasons.FirstOrDefault(r => r.ReasonId == reason.ReasonId);
+                                                var selectedReason = input.Reasons
+                                                    .FirstOrDefault(r => r.ReasonId == reason.ReasonId);
                                                 var reasonName = $"{prefix}.Reasons[{reason.ReasonId}]";
 
                                                 <input type="hidden"
@@ -333,6 +393,7 @@
                                                      data-reason="@reason.ReasonId"
                                                      data-decision="@reason.DecisionId"
                                                      data-reason-text="@reason.ReasonText">
+
                                                     <div class="form-check">
                                                         <input class="form-check-input js-reason-check"
                                                                type="checkbox"
@@ -346,7 +407,8 @@
                                                         </label>
                                                     </div>
 
-                                                    @foreach (var sub in Model.SubReasonsFor(kind).Where(s => s.ReasonId == reason.ReasonId))
+                                                    @foreach (var sub in Model.SubReasonsFor(kind)
+                                                        .Where(s => s.ReasonId == reason.ReasonId))
                                                     {
                                                         <div class="form-check ms-4 js-sub-item"
                                                              data-subreason-text="@sub.SubReasonText">
@@ -366,22 +428,23 @@
                                             }
                                         </div>
 
-                                        @Html.ValidationMessage(prefix + ".Reasons", new { @class = "text-danger small" })
+                                        @Html.ValidationMessage(prefix + ".Reasons",
+                                            new { @class = "text-danger small" })
                                     </div>
                                 </div>
 
                                 <div class="row g-3 mt-0">
                                     <div class="col-md-2 js-postpone"
                                          hidden="@(!Model.Shows(input.DecisionId, "PostponePeriod"))">
-                                        <label class="form-label small mb-1" for="postpone-@index">Postpone period</label>
-                                        <input type="number"
-                                               min="0"
-                                               max="999"
+                                        <label class="form-label small mb-1"
+                                               for="postpone-@index">Postpone period</label>
+                                        <input type="number" min="0" max="999"
                                                class="form-control form-control-sm"
                                                id="postpone-@index"
                                                name="@(prefix).PostponePeriod"
                                                value="@input.PostponePeriod" />
-                                        @Html.ValidationMessage(prefix + ".PostponePeriod", new { @class = "text-danger small" })
+                                        @Html.ValidationMessage(prefix + ".PostponePeriod",
+                                            new { @class = "text-danger small" })
                                     </div>
 
                                     <div class="col-md-6 js-extras"
@@ -401,20 +464,16 @@
                                                     }
 
                                                     var extraName = prefix + "." + extra.Name;
-
                                                     <div class="col-6 col-md-4">
                                                         <label class="form-label small mb-1"
-                                                               for="@(extra.Name)-@index">
-                                                            @extra.Label
-                                                        </label>
-                                                        <input type="number"
-                                                               step="0.01"
-                                                               min="0"
+                                                               for="@(extra.Name)-@index">@extra.Label</label>
+                                                        <input type="number" step="0.01" min="0"
                                                                class="form-control form-control-sm"
                                                                id="@(extra.Name)-@index"
                                                                name="@extraName"
                                                                value="@Model.Dec(Model.GetExtra(input, extra.Name))" />
-                                                        @Html.ValidationMessage(extraName, new { @class = "text-danger small" })
+                                                        @Html.ValidationMessage(extraName,
+                                                            new { @class = "text-danger small" })
                                                     </div>
                                                 }
                                             </div>
@@ -426,9 +485,8 @@
 
                                     <div class="col-md-4">
                                         <div class="js-global-note-area" hidden>
-                                            <label class="form-label small mb-1" for="global-notes-@index">
-                                                Global note (inherited)
-                                            </label>
+                                            <label class="form-label small mb-1"
+                                                   for="global-notes-@index">Global note (inherited)</label>
                                             <input type="text"
                                                    class="form-control form-control-sm js-inherited-note"
                                                    id="global-notes-@index"
@@ -437,16 +495,15 @@
                                         </div>
 
                                         <div class="js-override-notes">
-                                            <label class="form-label small mb-1" for="notes-@index">
-                                                Override note
-                                            </label>
-                                            <input type="text"
-                                                   maxlength="500"
+                                            <label class="form-label small mb-1"
+                                                   for="notes-@index">Override note</label>
+                                            <input type="text" maxlength="500"
                                                    class="form-control form-control-sm"
                                                    id="notes-@index"
                                                    name="@(prefix).Notes"
                                                    value="@input.Notes" />
-                                            @Html.ValidationMessage(prefix + ".Notes", new { @class = "text-danger small" })
+                                            @Html.ValidationMessage(prefix + ".Notes",
+                                                new { @class = "text-danger small" })
                                         </div>
                                     </div>
                                 </div>
@@ -462,6 +519,187 @@
         </form>
     }
 }
+
+<style>
+    .global-decisions .list-group-item {
+        padding: .65rem .8rem;
+    }
+
+    .global-decision-row {
+        display: grid;
+        grid-template-columns: minmax(135px, .8fr) minmax(150px, .9fr) minmax(190px, 1.25fr) minmax(220px, 1.45fr);
+        gap: .65rem;
+        align-items: start;
+    }
+
+    .global-kind {
+        padding-top: 1.85rem;
+        min-width: 0;
+    }
+
+    .global-field {
+        min-width: 0;
+    }
+
+        .global-field > .form-label {
+            display: block;
+            margin-bottom: .25rem;
+        }
+
+    .multi-picker {
+        position: relative;
+        width: 100%;
+    }
+
+        .multi-picker > summary {
+            display: flex;
+            align-items: center;
+            min-height: 31px;
+            cursor: pointer;
+            list-style: none;
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+            padding-right: 1.8rem;
+            position: relative;
+        }
+
+            .multi-picker > summary::-webkit-details-marker {
+                display: none;
+            }
+
+            .multi-picker > summary::after {
+                content: "▾";
+                position: absolute;
+                right: .65rem;
+            }
+
+        .multi-picker[open] > summary::after {
+            content: "▴";
+        }
+
+    .multi-picker-menu {
+        position: absolute;
+        z-index: 1050;
+        top: calc(100% + 3px);
+        left: 0;
+        width: max(100%, 250px);
+        max-width: min(390px, 85vw);
+        padding: .55rem;
+        border: 1px solid var(--bs-border-color);
+        border-radius: .375rem;
+        background: var(--bs-body-bg);
+        box-shadow: 0 .35rem .8rem rgba(0,0,0,.12);
+    }
+
+    .multi-picker-options {
+        max-height: 185px;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+    }
+
+    .multi-option {
+        display: flex;
+        align-items: flex-start;
+        gap: .5rem;
+        padding: .35rem .25rem;
+        margin: 0;
+        border-radius: .25rem;
+        cursor: pointer;
+        font-size: .82rem;
+        overflow-wrap: anywhere;
+    }
+
+        .multi-option:hover {
+            background: var(--bs-tertiary-bg);
+        }
+
+        .multi-option .form-check-input {
+            flex: 0 0 auto;
+            margin-top: .2rem;
+        }
+
+    .sub-parent {
+        display: block;
+        color: var(--bs-secondary-color);
+        font-size: .72rem;
+    }
+
+    .selected-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .25rem;
+        max-height: 58px;
+        overflow-y: auto;
+        margin-top: .3rem;
+        padding: 0;
+    }
+
+    .selected-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: .3rem;
+        max-width: 100%;
+        padding: .15rem .35rem;
+        border: 1px solid var(--bs-border-color);
+        border-radius: .3rem;
+        background: var(--bs-tertiary-bg);
+        font-size: .72rem;
+        line-height: 1.35;
+        overflow-wrap: anywhere;
+    }
+
+        .selected-chip button {
+            border: 0;
+            background: transparent;
+            color: var(--bs-secondary-color);
+            padding: 0;
+            font-size: .9rem;
+            line-height: 1;
+            cursor: pointer;
+        }
+
+    .global-note-row {
+        display: grid;
+        grid-template-columns: 65px minmax(180px, 1fr);
+        gap: .5rem;
+        align-items: center;
+        margin-top: .55rem;
+    }
+
+        .global-note-row .text-danger {
+            grid-column: 2;
+        }
+
+    .global-block .form-control:disabled,
+    .global-block .form-select:disabled {
+        opacity: .65;
+    }
+
+    @@media (max-width: 900px) {
+        .global-decision-row {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .global-kind {
+            padding-top: 0;
+        }
+    }
+
+    @@media (max-width: 520px) {
+        .global-decision-row {
+            grid-template-columns: minmax(0, 1fr);
+        }
+
+        .global-note-row {
+            grid-template-columns: minmax(0, 1fr);
+        }
+
+            .global-note-row .text-danger {
+                grid-column: 1;
+            }
+    }
+</style>
 
 @section Scripts {
     <script src="~/js/underwriting.js" asp-append-version="true"></script>
